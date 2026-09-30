@@ -1,0 +1,9 @@
+# backend
+backend/finance.db
+backend/node_modules/
+backend/__pycache__
+
+# frontend
+.vscode
+frontend/node_modules
+frontend/dist
