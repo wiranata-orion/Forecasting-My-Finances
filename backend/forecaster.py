@@ -43,32 +43,54 @@ def cycle_bounds(year, month, start_day, end_day):
     actual_end_day = min(end_day, calendar.monthrange(year, month)[1])
     return date(year, month, actual_start_day), date(year, month, actual_end_day)
 
-def calculate_forecast(transactions, planned_expenses, expected_next_income=None, base_year=None, base_month=None, saved_log=None, start_day=24, end_day=23, all_time=False):
+def calculate_forecast(transactions, planned_expenses, expected_next_income=None, base_year=None, base_month=None, saved_log=None, start_day=24, end_day=23, all_time=False, period_ranges=None):
     """
     Real Historical Forecasting Engine & Accuracy Evaluator:
-    - Proyeksi keuangan untuk bulan depan dari basis bulan yang sedang dilihat.
-    - Menghitung seberapa akurat hasil forecasting terhadap data riil di bulan depan
-      ketika melihat bulan-bulan sebelumnya (aktif saat data bulan depannya sudah selesai atau akhir bulan).
+        - Proyeksi keuangan untuk periode yang dipilih dari basis periode-periode sebelumnya.
+        - Menghitung akurasi terhadap data riil periode yang dipilih jika periodenya sudah selesai.
     - Terintegrasi dengan 1 log input acuan tersimpan.
     """
     today = date.today()
     start_day = max(1, min(31, int(start_day)))
     end_day = max(1, min(31, int(end_day)))
-    current_period = cycle_period(today, start_day, end_day)
+    period_ranges = period_ranges or {}
+
+    def bounds_for_period(year, month):
+        configured = period_ranges.get(f'{year:04d}-{month:02d}', {})
+        if configured.get('start') and configured.get('end'):
+            try:
+                return date.fromisoformat(configured['start']), date.fromisoformat(configured['end'])
+            except ValueError:
+                pass
+        return cycle_bounds(year, month, start_day, end_day)
+
+    def period_for_date(value):
+        matches = []
+        for key, configured in period_ranges.items():
+            try:
+                year, month = (int(part) for part in key.split('-', 1))
+                period_start = date.fromisoformat(configured['start'])
+                period_end = date.fromisoformat(configured['end'])
+            except (TypeError, ValueError, KeyError):
+                continue
+            if period_start <= value <= period_end:
+                matches.append((period_start, year, month))
+        if matches:
+            _, year, month = max(matches)
+            return year, month
+        return cycle_period(value, start_day, end_day)
+
+    current_period = period_for_date(today)
     cur_year = int(base_year) if base_year else current_period[0]
     cur_month = int(base_month) if base_month else current_period[1]
     if all_time:
         cur_year, cur_month = current_period
 
-    # Target bulan depan
-    if cur_month == 12:
-        next_year = cur_year + 1
-        next_month = 1
-    else:
-        next_year = cur_year
-        next_month = cur_month + 1
+    # Forecast the selected cycle using cycles before it as training data.
+    next_year = cur_year
+    next_month = cur_month
 
-    next_start, next_end = cycle_bounds(next_year, next_month, start_day, end_day)
+    next_start, next_end = bounds_for_period(next_year, next_month)
     days_in_next_month = (next_end - next_start).days + 1
     next_month_name = MONTH_NAMES_ID[next_month]
     target_ym = f"{next_year}-{next_month:02d}"
@@ -77,7 +99,7 @@ def calculate_forecast(transactions, planned_expenses, expected_next_income=None
     # Apakah sedang melihat bulan lampau?
     is_past_month = (cur_year, cur_month) < current_period
 
-    # Status waktu bulan depan
+    # Status waktu periode yang dipilih
     if (next_year, next_month) < current_period:
         timing_status = "selesai"
         is_next_month_completed = True
@@ -113,11 +135,12 @@ def calculate_forecast(transactions, planned_expenses, expected_next_income=None
         amt = float(tx.get('amount', 0))
         t_type = str(tx.get('type', 'expense')).lower()
         cat = tx.get('category', 'Lainnya')
+        period_year, period_month = period_for_date(t_date)
         all_records.append({
             'date': t_date,
             'year': t_date.year,
             'month': t_date.month,
-            'ym': f"{cycle_period(t_date, start_day, end_day)[0]}-{cycle_period(t_date, start_day, end_day)[1]:02d}",
+            'ym': f"{period_year}-{period_month:02d}",
             'amount': amt,
             'type': t_type,
             'category': cat
@@ -125,12 +148,12 @@ def calculate_forecast(transactions, planned_expenses, expected_next_income=None
 
     df_all = pd.DataFrame(all_records)
 
-    # Transaksi training (hingga bulan yang sedang dilihat)
-    df_training = df_all[df_all['ym'] <= base_ym]
-    # Transaksi riil bulan depan
+    # Transaksi training hanya memakai siklus sebelum periode yang dipilih.
+    df_training = df_all[df_all['ym'] < base_ym]
+    # Transaksi riil pada periode yang sedang diproyeksikan.
     df_next = df_all[df_all['ym'] == target_ym]
 
-    # Data riil aktual bulan depan
+    # Data riil aktual periode yang diproyeksikan
     real_next_income = float(
         df_next[
             (df_next['type'] == 'income')
@@ -155,7 +178,7 @@ def calculate_forecast(transactions, planned_expenses, expected_next_income=None
         first_year, first_month = map(int, distinct_yms[0].split('-'))
         distinct_yms = []
         period_year, period_month = first_year, first_month
-        while (period_year, period_month) <= (cur_year, cur_month):
+        while (period_year, period_month) < (cur_year, cur_month):
             distinct_yms.append(f"{period_year}-{period_month:02d}")
             if period_month == 12:
                 period_year, period_month = period_year + 1, 1
@@ -205,13 +228,13 @@ def calculate_forecast(transactions, planned_expenses, expected_next_income=None
     cur_planned_total = 0.0
     for p in planned_expenses:
         p_date = parse_date(p.get('date', ''))
-        if cycle_period(p_date, start_day, end_day) == (cur_year, cur_month) or not p.get('date'):
+        if period_for_date(p_date) == (cur_year, cur_month) or not p.get('date'):
             prob = float(p.get('probability', 100)) / 100.0
             cur_planned_total += float(p.get('amount', 0)) * prob
 
     accuracy_series = []
     for index, month_data in enumerate(monthly_stats):
-        if index == 0 or ((month_data['year'], month_data['month']) == current_period and today < cycle_bounds(*current_period, start_day, end_day)[1]):
+        if index == 0 or ((month_data['year'], month_data['month']) == current_period and today < bounds_for_period(*current_period)[1]):
             continue
         previous = monthly_stats[:index]
         if len(previous) >= 2:
@@ -229,7 +252,7 @@ def calculate_forecast(transactions, planned_expenses, expected_next_income=None
         accuracy_series.append({'ym': month_data['ym'], 'period': month_data['period'], 'accuracy': round(accuracy, 1)})
 
     history_days = sum(
-        (cycle_bounds(item['year'], item['month'], start_day, end_day)[1] - cycle_bounds(item['year'], item['month'], start_day, end_day)[0]).days + 1
+        (bounds_for_period(item['year'], item['month'])[1] - bounds_for_period(item['year'], item['month'])[0]).days + 1
         for item in monthly_stats
     )
     history_total_income = sum(item['income'] for item in monthly_stats)
@@ -336,8 +359,7 @@ def calculate_forecast(transactions, planned_expenses, expected_next_income=None
                 })
     category_forecast = sorted(category_forecast, key=lambda x: x['projected_amount'], reverse=True)
 
-    # 5. EVALUASI AKURASI HASIL FORECASTING DENGAN DATA BULAN DEPAN
-    # Kondisi: ketika melihat bulan-bulan sebelumnya dan bulan depan sudah selesai atau akhir bulan
+    # 5. Evaluasi hasil forecasting terhadap data periode yang dipilih.
     accuracy_eval = {
         'can_evaluate': False,
         'is_completed': is_next_month_completed,
@@ -399,7 +421,7 @@ def calculate_forecast(transactions, planned_expenses, expected_next_income=None
                 'accuracy_score': overall_acc,
                 'accuracy_grade': grade,
                 'accuracy_color': col,
-                'status_message': f"Data bulan depan ({next_month_name} {next_year}) {timing_text}. Diverifikasi terhadap {real_tx_count} transaksi riil.",
+                'status_message': f"Data periode terpilih ({next_month_name} {next_year}) {timing_text}. Diverifikasi terhadap {real_tx_count} transaksi riil.",
                 'diff_expense': diff_exp,
                 'abs_diff_expense': abs_diff_exp,
                 'expense_accuracy': exp_acc,
@@ -407,9 +429,9 @@ def calculate_forecast(transactions, planned_expenses, expected_next_income=None
                 'savings_accuracy': sav_acc
             })
         else:
-            accuracy_eval['status_message'] = f"Periode bulan depan ({next_month_name} {next_year}) telah berlalu, tetapi belum ada catatan transaksi riil yang terekam."
+            accuracy_eval['status_message'] = f"Periode terpilih ({next_month_name} {next_year}) telah berlalu, tetapi belum ada catatan transaksi riil yang terekam."
     elif is_past_month and not is_next_month_completed:
-        accuracy_eval['status_message'] = f"Bulan depan ({next_month_name} {next_year}) sedang berjalan (tanggal {today.day}) dan belum akhir bulan. Evaluasi akurasi aktif saat data bulan selesai atau akhir bulan (tanggal 25+)."
+        accuracy_eval['status_message'] = f"Periode terpilih ({next_month_name} {next_year}) sedang berjalan (tanggal {today.day}) dan belum akhir siklus. Evaluasi akurasi aktif saat periode selesai."
     else:
         accuracy_eval['status_message'] = f"Saat ini sedang melihat bulan berjalan ({MONTH_NAMES_ID[cur_month]} {cur_year}). Gunakan navigator bulan di atas untuk melihat akurasi peramalan pada bulan-bulan sebelumnya."
 
@@ -439,13 +461,13 @@ def calculate_forecast(transactions, planned_expenses, expected_next_income=None
         insights.append({
             'type': 'success',
             'title': 'Kapasitas Tabungan Sehat',
-            'message': f'Dengan proyeksi pemasukan Rp {projected_income:,.0f}, potensi tabungan bulan depan adalah Rp {forecast_savings:,.0f} ({savings_ratio}%).'
+            'message': f'Dengan proyeksi pemasukan Rp {projected_income:,.0f}, potensi tabungan periode terpilih adalah Rp {forecast_savings:,.0f} ({savings_ratio}%).'
         })
     elif savings_ratio > 0:
         insights.append({
             'type': 'warning',
             'title': 'Margin Tabungan Perlu Dijaga',
-            'message': f'Proyeksi sisa tabungan bulan depan sebesar Rp {forecast_savings:,.0f} ({savings_ratio}%). Pertahankan batas belanja harian aman.'
+            'message': f'Proyeksi sisa tabungan periode terpilih sebesar Rp {forecast_savings:,.0f} ({savings_ratio}%). Pertahankan batas belanja harian aman.'
         })
 
     return {

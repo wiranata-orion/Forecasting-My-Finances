@@ -1,6 +1,7 @@
 import os
 import uuid
 import calendar
+import json
 from datetime import datetime, date, timedelta
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -56,7 +57,7 @@ def add_transaction():
         "category": 'Pindah Dana' if tx_type == 'transfer' else data.get('category', 'Lainnya'),
         "wallet": wallet_name,
         "transfer_to": transfer_to,
-        "savings_status": 'savings' if data.get('savings_status') == 'savings' else 'non_savings',
+        "savings_status": 'savings' if data.get('savings_status') == 'savings' and tx_type != 'transfer' else 'non_savings',
         "created_at": datetime.now().isoformat()
     }
 
@@ -94,7 +95,7 @@ def update_transaction(tx_id):
         'category': 'Pindah Dana' if tx_type == 'transfer' else data.get('category', 'Lainnya'),
         'wallet': wallet_name,
         'transfer_to': transfer_to,
-        'savings_status': 'savings' if data.get('savings_status') == 'savings' else 'non_savings'
+        'savings_status': 'savings' if data.get('savings_status') == 'savings' and tx_type != 'transfer' else 'non_savings'
     }
     if wallet_name:
         database.insert_wallet({'id': f"w-{uuid.uuid4().hex[:8]}", 'name': wallet_name})
@@ -135,6 +136,7 @@ def add_planned():
         "probability": int(data.get('probability', 100)),
         "date": data.get('date') or date.today().strftime("%Y-%m-%d"),
         "notes": data.get('notes', ''),
+        "wallet": str(data.get('wallet', '')).strip(),
         "created_at": datetime.now().isoformat()
     }
 
@@ -147,6 +149,291 @@ def delete_planned(plan_id):
     if not success:
         return jsonify({"error": "Item rencana tidak ditemukan"}), 404
     return jsonify({"message": "Rencana berhasil dihapus", "id": plan_id})
+
+@app.route('/api/planned/<plan_id>', methods=['PUT'])
+def update_planned(plan_id):
+    data = request.json or {}
+    try:
+        amount = float(data.get('amount', 0))
+        probability = int(data.get('probability', 100))
+    except (ValueError, TypeError):
+        return jsonify({"error": "Data rencana tidak valid"}), 400
+    if amount <= 0 or not str(data.get('title', '')).strip():
+        return jsonify({"error": "Nama dan nominal rencana wajib diisi"}), 400
+    updated = {
+        'title': str(data.get('title')).strip(), 'amount': amount,
+        'category': str(data.get('category', 'Lain-lain')).strip(),
+        'probability': max(0, min(100, probability)),
+        'date': data.get('date') or date.today().isoformat(),
+        'notes': str(data.get('notes', '')).strip(),
+        'wallet': str(data.get('wallet', '')).strip()
+    }
+    if not database.update_planned_by_id(plan_id, updated):
+        return jsonify({"error": "Rencana tidak ditemukan"}), 404
+    return jsonify({'id': plan_id, **updated})
+
+def is_current_cycle(year, month):
+    start_day = int(database.get_setting('payday_start_day', '24'))
+    end_day = int(database.get_setting('payday_end_day', '23'))
+    start_date, end_date = get_period_bounds(year, month, start_day, end_day)
+    return start_date <= date.today() <= end_date
+
+def get_period_bounds(year, month, start_day=None, end_day=None):
+    try:
+        periods = json.loads(database.get_setting('cycle_periods', '{}'))
+        stored = periods.get(f'{year:04d}-{month:02d}', {})
+        if stored.get('start') and stored.get('end'):
+            return date.fromisoformat(stored['start']), date.fromisoformat(stored['end'])
+    except (TypeError, ValueError, json.JSONDecodeError):
+        pass
+    if start_day is None:
+        start_day = int(database.get_setting('payday_start_day', '24'))
+    if end_day is None:
+        end_day = int(database.get_setting('payday_end_day', '23'))
+    return get_cycle_bounds(year, month, start_day, end_day)
+
+def monthly_transaction_fields(data):
+    transaction_type = str(data.get('type', 'expense')).lower()
+    if transaction_type not in {'income', 'expense', 'transfer'}:
+        raise ValueError('Tipe transaksi tidak valid')
+    wallet = str(data.get('wallet', '')).strip()
+    transfer_to = str(data.get('transfer_to', '')).strip()
+    if transaction_type == 'transfer' and (not wallet or not transfer_to or wallet == transfer_to):
+        raise ValueError('Transfer memerlukan rekening asal dan tujuan yang berbeda')
+    return {
+        'type': transaction_type,
+        'wallet': wallet,
+        'transfer_to': transfer_to
+    }
+
+def calculate_active_savings_amount(transactions):
+    """Calculate net funds held in wallets participating in savings allocations."""
+    configured_value = database.get_setting('savings_wallets', '[]')
+    try:
+        configured_wallets = {str(name).strip() for name in json.loads(configured_value) if str(name).strip()}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        configured_wallets = set()
+    if configured_wallets:
+        amount = 0.0
+        for tx in transactions:
+            source = str(tx.get('wallet', '')).strip()
+            target = str(tx.get('transfer_to', '')).strip()
+            value = float(tx.get('amount', 0) or 0)
+            if tx.get('type') == 'transfer':
+                if source in configured_wallets:
+                    amount -= value
+                if target in configured_wallets:
+                    amount += value
+            elif source in configured_wallets:
+                amount += value if tx.get('type') == 'income' else -value
+        return amount
+    active_wallets = {
+        str(tx.get('transfer_to', '')).strip()
+        for tx in transactions
+        if tx.get('type') == 'transfer'
+        and tx.get('savings_status') == 'savings'
+        and str(tx.get('transfer_to', '')).strip()
+    }
+    amount = 0.0
+    for tx in transactions:
+        wallet = str(tx.get('wallet', '')).strip()
+        tx_type = tx.get('type')
+        value = float(tx.get('amount', 0) or 0)
+        if tx_type == 'transfer':
+            if tx.get('savings_status') == 'savings' and wallet not in active_wallets and tx.get('transfer_to') in active_wallets:
+                amount += value
+        elif wallet in active_wallets:
+            if tx_type == 'income':
+                amount += value
+            elif tx_type == 'expense' and tx.get('savings_status') == 'savings':
+                amount -= value
+    return amount
+
+@app.route('/api/monthly-needs', methods=['GET'])
+def get_monthly_needs():
+    try:
+        year = int(request.args.get('year', date.today().year))
+        month = int(request.args.get('month', date.today().month))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Bulan kebutuhan tidak valid"}), 400
+    return jsonify(database.get_monthly_expenses(year, month))
+
+@app.route('/api/monthly-templates', methods=['GET', 'POST'])
+def monthly_templates():
+    if request.method == 'GET':
+        return jsonify(database.get_monthly_templates())
+    data = request.json or {}
+    try:
+        name = str(data.get('name', '')).strip()
+        raw_items = data.get('items', [])
+        if not name or not isinstance(raw_items, list) or not raw_items:
+            raise ValueError
+        items = []
+        for raw_item in raw_items:
+            amount = float(raw_item.get('amount', 0))
+            occurrences = int(raw_item.get('total_occurrences', 0))
+            title = str(raw_item.get('title', '')).strip()
+            if not title or amount <= 0 or occurrences <= 0:
+                raise ValueError
+            items.append({
+                'id': f"template-item-{uuid.uuid4().hex[:8]}", 'title': title, 'amount': amount,
+                'category': str(raw_item.get('category', 'Lain-lain')).strip(),
+                'total_occurrences': occurrences, **monthly_transaction_fields(raw_item)
+            })
+    except (TypeError, ValueError):
+        return jsonify({"error": "Nama template dan minimal satu item wajib diisi"}), 400
+    item = {'id': f"template-{uuid.uuid4().hex[:8]}", 'name': name, 'items': items, 'created_at': datetime.now().isoformat()}
+    database.insert_monthly_template(item)
+    return jsonify(item), 201
+
+@app.route('/api/monthly-templates/<template_id>', methods=['PUT', 'DELETE'])
+def manage_monthly_template(template_id):
+    if request.method == 'DELETE':
+        if not database.delete_monthly_template(template_id):
+            return jsonify({"error": "Template tidak ditemukan"}), 404
+        return jsonify({"message": "Template dihapus", "id": template_id})
+    data = request.json or {}
+    try:
+        name = str(data.get('name', '')).strip()
+        items = []
+        for raw_item in data.get('items', []):
+            amount = float(raw_item.get('amount', 0))
+            occurrences = int(raw_item.get('total_occurrences', 0))
+            title = str(raw_item.get('title', '')).strip()
+            if not title or amount <= 0 or occurrences <= 0:
+                raise ValueError
+            items.append({
+                'id': f"template-item-{uuid.uuid4().hex[:8]}", 'title': title, 'amount': amount,
+                'category': str(raw_item.get('category', 'Lain-lain')).strip(),
+                'total_occurrences': occurrences, **monthly_transaction_fields(raw_item)
+            })
+        if not name or not items:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"error": "Nama template dan minimal satu item wajib diisi"}), 400
+    item = {'name': name, 'items': items}
+    if not database.update_monthly_template(template_id, item):
+        return jsonify({"error": "Template tidak ditemukan"}), 404
+    return jsonify({'id': template_id, **item})
+
+@app.route('/api/monthly-templates/<template_id>/apply', methods=['POST'])
+def apply_monthly_template(template_id):
+    data = request.json or {}
+    try:
+        year = int(data.get('year'))
+        month = int(data.get('month'))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Bulan kebutuhan tidak valid"}), 400
+    if not is_current_cycle(year, month):
+        return jsonify({"error": "Template hanya dapat diterapkan pada bulan yang sedang berjalan"}), 400
+    template = database.get_monthly_template_by_id(template_id)
+    if not template:
+        return jsonify({"error": "Template tidak ditemukan"}), 404
+    existing = database.get_monthly_expenses(year, month)
+    if existing and not data.get('force', False):
+        return jsonify({"error": "Bulan ini sudah memiliki list kebutuhan", "requires_confirmation": True}), 409
+    created_items = []
+    for template_item in template['items']:
+        item = {
+            'id': f"need-{uuid.uuid4().hex[:8]}", 'year': year, 'month': month,
+            'title': template_item['title'], 'amount': template_item['amount'],
+            'category': template_item['category'], 'total_occurrences': template_item['total_occurrences'],
+            'remaining_occurrences': template_item['total_occurrences'], 'type': template_item.get('type', 'expense'),
+            'wallet': template_item.get('wallet', ''), 'transfer_to': template_item.get('transfer_to', ''),
+            'created_at': datetime.now().isoformat()
+        }
+        database.insert_monthly_expense(item)
+        created_items.append(item)
+    return jsonify({'template': template['name'], 'items': created_items}), 201
+
+@app.route('/api/monthly-needs', methods=['POST'])
+def add_monthly_need():
+    data = request.json or {}
+    try:
+        year = int(data.get('year'))
+        month = int(data.get('month'))
+        amount = float(data.get('amount', 0))
+        occurrences = int(data.get('total_occurrences', 0))
+        transaction_fields = monthly_transaction_fields(data)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Data kebutuhan bulanan tidak valid"}), 400
+    if not is_current_cycle(year, month):
+        return jsonify({"error": "Kebutuhan hanya dapat dibuat pada bulan yang sedang berjalan"}), 400
+    title = str(data.get('title', '')).strip()
+    category = str(data.get('category', 'Lain-lain')).strip()
+    if not title or amount <= 0 or occurrences <= 0:
+        return jsonify({"error": "Nama, harga, dan jumlah transaksi wajib valid"}), 400
+    item = {
+        'id': f"need-{uuid.uuid4().hex[:8]}", 'year': year, 'month': month,
+        'title': title, 'amount': amount, 'category': category,
+        'total_occurrences': occurrences, 'remaining_occurrences': occurrences,
+        **transaction_fields,
+        'created_at': datetime.now().isoformat()
+    }
+    database.insert_monthly_expense(item)
+    return jsonify(item), 201
+
+@app.route('/api/monthly-needs/<item_id>', methods=['PUT', 'DELETE'])
+def manage_monthly_need(item_id):
+    if request.method == 'DELETE':
+        item = database.get_monthly_expense_by_id(item_id)
+        if not item:
+            return jsonify({"error": "Template kebutuhan tidak ditemukan"}), 404
+        if not is_current_cycle(item['year'], item['month']):
+            return jsonify({"error": "Template hanya dapat dihapus pada bulan yang sedang berjalan"}), 400
+        if not database.delete_monthly_expense(item_id):
+            return jsonify({"error": "Template kebutuhan tidak ditemukan"}), 404
+        return jsonify({"message": "Template kebutuhan dihapus", "id": item_id})
+    data = request.json or {}
+    try:
+        amount = float(data.get('amount', 0))
+        total_occurrences = int(data.get('total_occurrences', 0))
+        remaining_occurrences = int(data.get('remaining_occurrences', 0))
+        year = int(data.get('year'))
+        month = int(data.get('month'))
+        transaction_fields = monthly_transaction_fields(data)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Data kebutuhan bulanan tidak valid"}), 400
+    if amount <= 0 or total_occurrences <= 0 or remaining_occurrences < 0 or remaining_occurrences > total_occurrences:
+        return jsonify({"error": "Harga dan jumlah transaksi tidak valid"}), 400
+    item = {
+        'title': str(data.get('title', '')).strip(), 'amount': amount,
+        'category': str(data.get('category', 'Lain-lain')).strip(),
+        'total_occurrences': total_occurrences, 'remaining_occurrences': remaining_occurrences,
+        **transaction_fields
+    }
+    if not item['title'] or not is_current_cycle(year, month):
+        return jsonify({"error": "Template hanya dapat diedit pada bulan yang sedang berjalan"}), 400
+    if not database.update_monthly_expense(item_id, item):
+        return jsonify({"error": "Template kebutuhan tidak ditemukan"}), 404
+    return jsonify({'id': item_id, **item})
+
+@app.route('/api/monthly-needs/<item_id>/realize', methods=['POST'])
+def realize_monthly_need(item_id):
+    data = request.json or {}
+    try:
+        quantity = int(data.get('quantity', 0))
+        year = int(data.get('year'))
+        month = int(data.get('month'))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Jumlah transaksi tidak valid"}), 400
+    if quantity <= 0 or not is_current_cycle(year, month):
+        return jsonify({"error": "Template hanya dapat direalisasikan pada bulan yang sedang berjalan"}), 400
+    items = database.get_monthly_expenses(year, month)
+    item = next((entry for entry in items if entry['id'] == item_id), None)
+    if not item:
+        return jsonify({"error": "Template kebutuhan tidak ditemukan"}), 404
+    tx = {
+        'id': f"tx-{uuid.uuid4().hex[:8]}", 'date': date.today().isoformat(),
+        'description': item['title'], 'amount': float(item['amount']) * quantity,
+        'category': item['category'], 'type': item.get('type', 'expense'),
+        'wallet': item.get('wallet', ''), 'transfer_to': item.get('transfer_to', ''),
+        'created_at': datetime.now().isoformat()
+    }
+    success, error = database.realize_monthly_expense(item_id, quantity, tx)
+    if not success:
+        return jsonify({"error": error}), 400
+    return jsonify({'transaction': tx, 'quantity': quantity}), 201
 
 # -- Wallet endpoints --
 @app.route('/api/wallets', methods=['GET'])
@@ -202,7 +489,7 @@ def get_wallet_balances():
             month = int(request.args.get('month', date.today().month))
             start_day = int(database.get_setting('payday_start_day', '24'))
             end_day = int(database.get_setting('payday_end_day', '23'))
-            start_date, end_date = get_cycle_bounds(year, month, start_day, end_day)
+            start_date, end_date = get_period_bounds(year, month, start_day, end_day)
         except (TypeError, ValueError):
             return jsonify({"error": "Periode saldo tidak valid"}), 400
     balances = database.get_wallet_balances(
@@ -229,6 +516,49 @@ def payday_cutoff_setting():
     database.set_setting('payday_start_day', start_day)
     database.set_setting('payday_end_day', end_day)
     return jsonify({"start_day": start_day, "end_day": end_day})
+
+@app.route('/api/settings/cycle-period', methods=['GET', 'PUT'])
+def cycle_period_setting():
+    payload = request.args if request.method == 'GET' else (request.json or {})
+    try:
+        year = int(payload.get('year'))
+        month = int(payload.get('month'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Tahun dan bulan periode tidak valid'}), 400
+    key = f'{year:04d}-{month:02d}'
+    try:
+        periods = json.loads(database.get_setting('cycle_periods', '{}'))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        periods = {}
+    if request.method == 'GET':
+        start_date, end_date = get_period_bounds(year, month)
+        return jsonify({'year': year, 'month': month, 'start': start_date.isoformat(), 'end': end_date.isoformat()})
+    try:
+        start_date = date.fromisoformat(str(payload.get('start')))
+        end_date = date.fromisoformat(str(payload.get('end')))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Tanggal mulai dan selesai harus valid'}), 400
+    if start_date > end_date:
+        return jsonify({'error': 'Tanggal mulai tidak boleh setelah tanggal selesai'}), 400
+    periods[key] = {'start': start_date.isoformat(), 'end': end_date.isoformat()}
+    database.set_setting('cycle_periods', json.dumps(periods))
+    return jsonify({'year': year, 'month': month, 'start': start_date.isoformat(), 'end': end_date.isoformat()})
+
+@app.route('/api/settings/savings-wallets', methods=['GET', 'PUT'])
+def savings_wallet_setting():
+    if request.method == 'GET':
+        try:
+            wallets = json.loads(database.get_setting('savings_wallets', '[]'))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            wallets = []
+        return jsonify({'wallets': wallets if isinstance(wallets, list) else []})
+    data = request.json or {}
+    wallets = data.get('wallets', [])
+    if not isinstance(wallets, list):
+        return jsonify({'error': 'Daftar rekening tabungan tidak valid'}), 400
+    normalized = list(dict.fromkeys(str(wallet).strip() for wallet in wallets if str(wallet).strip()))
+    database.set_setting('savings_wallets', json.dumps(normalized))
+    return jsonify({'wallets': normalized})
 
 def get_cycle_bounds(year, month, start_day, end_day):
     if start_day > end_day:
@@ -264,32 +594,15 @@ def run_forecast():
     start_day = int(database.get_setting('payday_start_day', '24'))
     end_day = int(database.get_setting('payday_end_day', '23'))
     all_time = bool(req_data.get('all_time', False))
+    try:
+        period_ranges = json.loads(database.get_setting('cycle_periods', '{}'))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        period_ranges = {}
 
-    # Label periode berikutnya untuk log
-    if cur_month == 12:
-        nxt_y = cur_year + 1
-        nxt_m = 1
-    else:
-        nxt_y = cur_year
-        nxt_m = cur_month + 1
-    target_period_label = f"{MONTH_NAMES_ID[nxt_m]} {nxt_y}"
+    target_period_label = f"{MONTH_NAMES_ID[cur_month]} {cur_year}"
 
-    raw_inc = req_data.get('expected_income')
-    is_saving_log = req_data.get('is_saving_log', False)
-
-    if raw_inc is not None and (is_saving_log or float(raw_inc) > 0):
-        try:
-            expected_income = float(raw_inc)
-            saved_log = database.save_forecast_log(cur_year, cur_month, expected_income, target_period_label)
-        except (ValueError, TypeError):
-            expected_income = None
-            saved_log = database.get_forecast_log(cur_year, cur_month)
-    else:
-        saved_log = database.get_forecast_log(cur_year, cur_month)
-        if saved_log and 'amount' in saved_log:
-            expected_income = float(saved_log['amount'])
-        else:
-            expected_income = None
+    expected_income = None
+    saved_log = None
 
     txs = database.get_all_transactions()
     plans = database.get_all_planned()
@@ -303,7 +616,8 @@ def run_forecast():
         saved_log=saved_log,
         start_day=start_day,
         end_day=end_day,
-        all_time=all_time
+        all_time=all_time,
+        period_ranges=period_ranges
     )
     return jsonify(result)
 
@@ -338,7 +652,7 @@ def get_summary():
     start_day = int(database.get_setting('payday_start_day', '24'))
     end_day = int(database.get_setting('payday_end_day', '23'))
     if not is_all_time:
-        start_date, end_date = get_cycle_bounds(cur_year, cur_month, start_day, end_day)
+        start_date, end_date = get_period_bounds(cur_year, cur_month, start_day, end_day)
 
     def is_salary_income(tx):
         category = str(tx.get('category', '')).casefold()
@@ -352,6 +666,8 @@ def get_summary():
         except (KeyError, TypeError, ValueError):
             continue
         if not is_all_time and not start_date <= transaction_date <= end_date:
+            continue
+        if not is_all_time and start_date <= today <= end_date and transaction_date > today:
             continue
         cur_txs.append(tx)
         date_key = transaction_date.isoformat()
@@ -404,9 +720,7 @@ def get_summary():
             'total_planned': total_planned,
             'sisa_tabungan': total_funds,
             'savings_ratio': 0,
-            'savings_status_amount': sum(
-                float(tx.get('amount', 0)) for tx in cur_txs if tx.get('savings_status') == 'savings'
-            )
+            'savings_status_amount': calculate_active_savings_amount(cur_txs)
         },
         'daily_analytics': sorted(daily_map.values(), key=lambda item: item['date']),
         'categories': sorted(

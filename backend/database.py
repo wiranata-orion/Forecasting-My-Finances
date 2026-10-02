@@ -61,9 +61,81 @@ def init_db():
         probability INTEGER DEFAULT 100,
         date TEXT NOT NULL,
         notes TEXT,
+        wallet TEXT DEFAULT '',
         created_at TEXT NOT NULL
     )
     """)
+    planned_columns = {row['name'] for row in cursor.execute("PRAGMA table_info(planned_expenses)")}
+    if 'wallet' not in planned_columns:
+        cursor.execute("ALTER TABLE planned_expenses ADD COLUMN wallet TEXT DEFAULT ''")
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS monthly_expenses (
+        id TEXT PRIMARY KEY,
+        year INTEGER NOT NULL,
+        month INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        amount REAL NOT NULL,
+        category TEXT NOT NULL,
+        total_occurrences INTEGER NOT NULL DEFAULT 1,
+        remaining_occurrences INTEGER NOT NULL DEFAULT 1,
+        type TEXT NOT NULL DEFAULT 'expense',
+        wallet TEXT DEFAULT '',
+        transfer_to TEXT DEFAULT '',
+        created_at TEXT NOT NULL
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS monthly_templates (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        amount REAL NOT NULL,
+        category TEXT NOT NULL,
+        total_occurrences INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS monthly_template_sets (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS monthly_template_items (
+        id TEXT PRIMARY KEY,
+        template_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        amount REAL NOT NULL,
+        category TEXT NOT NULL,
+        total_occurrences INTEGER NOT NULL DEFAULT 1,
+        type TEXT NOT NULL DEFAULT 'expense',
+        wallet TEXT DEFAULT '',
+        transfer_to TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (template_id) REFERENCES monthly_template_sets(id) ON DELETE CASCADE
+    )
+    """)
+
+    monthly_columns = {row['name'] for row in cursor.execute("PRAGMA table_info(monthly_expenses)")}
+    for column, definition in {
+        'type': "TEXT NOT NULL DEFAULT 'expense'",
+        'wallet': "TEXT DEFAULT ''",
+        'transfer_to': "TEXT DEFAULT ''"
+    }.items():
+        if column not in monthly_columns:
+            cursor.execute(f"ALTER TABLE monthly_expenses ADD COLUMN {column} {definition}")
+    template_item_columns = {row['name'] for row in cursor.execute("PRAGMA table_info(monthly_template_items)")}
+    for column, definition in {
+        'type': "TEXT NOT NULL DEFAULT 'expense'",
+        'wallet': "TEXT DEFAULT ''",
+        'transfer_to': "TEXT DEFAULT ''"
+    }.items():
+        if column not in template_item_columns:
+            cursor.execute(f"ALTER TABLE monthly_template_items ADD COLUMN {column} {definition}")
 
     # Table: settings
     cursor.execute("""
@@ -75,6 +147,25 @@ def init_db():
 
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('payday_start_day', '24')")
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('payday_end_day', '23')")
+    template_migration = cursor.execute(
+        "SELECT value FROM settings WHERE key = 'monthly_templates_parent_v1'"
+    ).fetchone()
+    if not template_migration:
+        old_templates = cursor.execute("SELECT * FROM monthly_templates").fetchall()
+        for old in old_templates:
+            cursor.execute(
+                "INSERT OR IGNORE INTO monthly_template_sets (id, name, created_at) VALUES (?, ?, ?)",
+                (old['id'], old['title'], old['created_at'])
+            )
+            cursor.execute("""
+            INSERT OR IGNORE INTO monthly_template_items
+                            (id, template_id, title, amount, category, total_occurrences, type, wallet, transfer_to, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, 'expense', '', '', ?)
+            """, (
+                f"{old['id']}-item", old['id'], old['title'], old['amount'], old['category'],
+                old['total_occurrences'], old['created_at']
+            ))
+        cursor.execute("INSERT INTO settings (key, value) VALUES ('monthly_templates_parent_v1', 'done')")
     salary_category_migration = cursor.execute(
         "SELECT value FROM settings WHERE key = 'salary_category_normalization_v1'"
     ).fetchone()
@@ -189,8 +280,8 @@ def insert_planned(plan):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-    INSERT INTO planned_expenses (id, title, amount, category, probability, date, notes, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO planned_expenses (id, title, amount, category, probability, date, notes, wallet, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         plan['id'],
         plan['title'],
@@ -199,6 +290,7 @@ def insert_planned(plan):
         plan.get('probability', 100),
         plan['date'],
         plan.get('notes', ''),
+        plan.get('wallet', ''),
         plan.get('created_at', datetime.now().isoformat())
     ))
     conn.commit()
@@ -212,6 +304,180 @@ def delete_planned_by_id(plan_id):
     conn.commit()
     conn.close()
     return deleted
+
+def update_planned_by_id(plan_id, plan):
+    conn = get_connection()
+    cursor = conn.execute("""
+    UPDATE planned_expenses
+    SET title = ?, amount = ?, category = ?, probability = ?, date = ?, notes = ?, wallet = ?
+    WHERE id = ?
+    """, (
+        plan['title'], plan['amount'], plan['category'], plan['probability'],
+        plan['date'], plan.get('notes', ''), plan.get('wallet', ''), plan_id
+    ))
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+# Monthly Needs Queries
+def get_monthly_expenses(year, month):
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM monthly_expenses WHERE year = ? AND month = ? ORDER BY category ASC, created_at DESC",
+        (year, month)
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def get_monthly_templates():
+    conn = get_connection()
+    sets = conn.execute("SELECT * FROM monthly_template_sets ORDER BY created_at DESC").fetchall()
+    items = conn.execute("SELECT * FROM monthly_template_items ORDER BY created_at ASC").fetchall()
+    conn.close()
+    item_map = {}
+    for row in items:
+        item = dict(row)
+        item.pop('template_id', None)
+        item_map.setdefault(row['template_id'], []).append(item)
+    return [{**dict(row), 'items': item_map.get(row['id'], [])} for row in sets]
+
+def get_monthly_template_by_id(template_id):
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM monthly_template_sets WHERE id = ?", (template_id,)).fetchone()
+    items = conn.execute(
+        "SELECT * FROM monthly_template_items WHERE template_id = ? ORDER BY created_at ASC", (template_id,)
+    ).fetchall()
+    conn.close()
+    if not row:
+        return None
+    return {**dict(row), 'items': [dict(item) for item in items]}
+
+def insert_monthly_template(item):
+    conn = get_connection()
+    conn.execute("""
+    INSERT INTO monthly_template_sets (id, name, created_at)
+    VALUES (?, ?, ?)
+    """, (
+        item['id'], item['name'], item.get('created_at', datetime.now().isoformat())
+    ))
+    for template_item in item['items']:
+        conn.execute("""
+        INSERT INTO monthly_template_items
+                    (id, template_id, title, amount, category, total_occurrences, type, wallet, transfer_to, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            template_item['id'], item['id'], template_item['title'], template_item['amount'],
+                        template_item['category'], template_item['total_occurrences'], template_item.get('type', 'expense'),
+                        template_item.get('wallet', ''), template_item.get('transfer_to', ''),
+            template_item.get('created_at', datetime.now().isoformat())
+        ))
+    conn.commit()
+    conn.close()
+
+def update_monthly_template(template_id, item):
+    conn = get_connection()
+    cursor = conn.execute("""
+    UPDATE monthly_template_sets SET name = ?
+    WHERE id = ?
+    """, (item['name'], template_id))
+    conn.execute("DELETE FROM monthly_template_items WHERE template_id = ?", (template_id,))
+    for template_item in item['items']:
+        conn.execute("""
+        INSERT INTO monthly_template_items
+                    (id, template_id, title, amount, category, total_occurrences, type, wallet, transfer_to, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            template_item['id'], template_id, template_item['title'], template_item['amount'],
+                        template_item['category'], template_item['total_occurrences'], template_item.get('type', 'expense'),
+                        template_item.get('wallet', ''), template_item.get('transfer_to', ''), datetime.now().isoformat()
+        ))
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+def delete_monthly_template(template_id):
+    conn = get_connection()
+    conn.execute("DELETE FROM monthly_template_items WHERE template_id = ?", (template_id,))
+    cursor = conn.execute("DELETE FROM monthly_template_sets WHERE id = ?", (template_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+def insert_monthly_expense(item):
+    conn = get_connection()
+    conn.execute("""
+    INSERT INTO monthly_expenses
+            (id, year, month, title, amount, category, total_occurrences, remaining_occurrences, type, wallet, transfer_to, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        item['id'], item['year'], item['month'], item['title'], item['amount'], item['category'],
+        item['total_occurrences'], item['remaining_occurrences'], item.get('type', 'expense'), item.get('wallet', ''),
+        item.get('transfer_to', ''), item.get('created_at', datetime.now().isoformat())
+    ))
+    conn.commit()
+    conn.close()
+
+def update_monthly_expense(item_id, item):
+    conn = get_connection()
+    cursor = conn.execute("""
+    UPDATE monthly_expenses
+    SET title = ?, amount = ?, category = ?, total_occurrences = ?, remaining_occurrences = ?, type = ?, wallet = ?, transfer_to = ?
+    WHERE id = ?
+    """, (
+        item['title'], item['amount'], item['category'], item['total_occurrences'],
+        item['remaining_occurrences'], item.get('type', 'expense'), item.get('wallet', ''), item.get('transfer_to', ''), item_id
+    ))
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+def delete_monthly_expense(item_id):
+    conn = get_connection()
+    cursor = conn.execute("DELETE FROM monthly_expenses WHERE id = ?", (item_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+def get_monthly_expense_by_id(item_id):
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM monthly_expenses WHERE id = ?", (item_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def realize_monthly_expense(item_id, quantity, transaction):
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT remaining_occurrences FROM monthly_expenses WHERE id = ?", (item_id,)
+        ).fetchone()
+        if not row or row['remaining_occurrences'] < quantity:
+            return False, 'Jumlah transaksi melebihi sisa template'
+        conn.execute("""
+        INSERT INTO transactions
+          (id, date, description, amount, type, category, wallet, transfer_to, savings_status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            transaction['id'], transaction['date'], transaction['description'], transaction['amount'],
+            transaction['type'], transaction['category'], transaction.get('wallet', ''), transaction.get('transfer_to', ''),
+            transaction.get('savings_status', 'non_savings'),
+            transaction['created_at']
+        ))
+        conn.execute(
+            "UPDATE monthly_expenses SET remaining_occurrences = remaining_occurrences - ? WHERE id = ?",
+            (quantity, item_id)
+        )
+        conn.commit()
+        return True, None
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 # Settings Queries
 def get_setting(key, default=None):
