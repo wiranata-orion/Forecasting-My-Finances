@@ -82,6 +82,25 @@
         <span class="sub-text">Dihitung dari mutasi saldo</span>
       </div>
     </div>
+
+    <!-- Card 5: Estimasi total tabungan aktif -->
+    <div class="fin-card metric-card savings-forecast-card">
+      <div class="card-top">
+        <span class="metric-label">Total Tabungan Aktif</span>
+        <div class="metric-icon-wrap savings-forecast-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M3 7h18v13H3z"/>
+            <path d="M7 7V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"/>
+            <path d="M12 11v5M9.5 13.5h5"/>
+          </svg>
+        </div>
+      </div>
+      <div class="metric-value highlight-savings">{{ formatRupiah(totalSavings) }}</div>
+      <div class="card-footer">
+        <span class="badge badge-savings">Sisa + alokasi tabungan</span>
+        <span class="sub-text">Aktif saja</span>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -112,6 +131,10 @@ export default {
     plannedCount: {
       type: Number,
       default: 0
+    },
+    totalSavings: {
+      type: Number,
+      default: 0
     }
   },
   methods: {
@@ -127,7 +150,7 @@ export default {
 <style scoped>
 .overview-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 1.25rem;
   margin-bottom: 2rem;
 }
@@ -179,6 +202,10 @@ export default {
 .savings-icon {
   background: var(--savings-glow);
   color: var(--savings);
+}
+.savings-forecast-icon {
+  background: rgba(34, 197, 94, 0.14);
+  color: #22c55e;
 }
 
 .metric-value {

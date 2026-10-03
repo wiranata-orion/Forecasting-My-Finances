@@ -84,6 +84,111 @@ export async function deletePlanned(id) {
   return res.json();
 }
 
+export async function updatePlanned(id, planData) {
+  const res = await fetch(`${API_BASE}/planned/${id}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(planData)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Gagal memperbarui rencana pengeluaran');
+  }
+  return res.json();
+}
+
+export async function fetchMonthlyNeeds(year, month) {
+  const res = await fetch(`${API_BASE}/monthly-needs?year=${year}&month=${month}`);
+  if (!res.ok) throw new Error('Gagal mengambil kebutuhan bulanan');
+  return res.json();
+}
+
+export async function createMonthlyNeed(item) {
+  const res = await fetch(`${API_BASE}/monthly-needs`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Gagal menyimpan kebutuhan bulanan');
+  }
+  return res.json();
+}
+
+export async function updateMonthlyNeed(id, item) {
+  const res = await fetch(`${API_BASE}/monthly-needs/${id}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Gagal memperbarui kebutuhan bulanan');
+  }
+  return res.json();
+}
+
+export async function deleteMonthlyNeed(id) {
+  const res = await fetch(`${API_BASE}/monthly-needs/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Gagal menghapus kebutuhan bulanan');
+  return res.json();
+}
+
+export async function realizeMonthlyNeed(id, year, month, quantity, wallet = '') {
+  const res = await fetch(`${API_BASE}/monthly-needs/${id}/realize`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ year, month, quantity, wallet })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Gagal mengirim kebutuhan ke log transaksi');
+  }
+  return res.json();
+}
+
+export async function fetchMonthlyTemplates() {
+  const res = await fetch(`${API_BASE}/monthly-templates`);
+  if (!res.ok) throw new Error('Gagal mengambil template kebutuhan');
+  return res.json();
+}
+
+export async function createMonthlyTemplate(item) {
+  const res = await fetch(`${API_BASE}/monthly-templates`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Gagal menyimpan template kebutuhan');
+  }
+  return res.json();
+}
+
+export async function updateMonthlyTemplate(id, item) {
+  const res = await fetch(`${API_BASE}/monthly-templates/${id}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Gagal memperbarui template kebutuhan');
+  }
+  return res.json();
+}
+
+export async function deleteMonthlyTemplate(id) {
+  const res = await fetch(`${API_BASE}/monthly-templates/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Gagal menghapus template kebutuhan');
+  return res.json();
+}
+
+export async function applyMonthlyTemplate(id, year, month, force = false) {
+  const res = await fetch(`${API_BASE}/monthly-templates/${id}/apply`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ year, month, force })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const error = new Error(err.error || 'Gagal menerapkan template kebutuhan');
+    error.requiresConfirmation = Boolean(err.requires_confirmation);
+    throw error;
+  }
+  return res.json();
+}
+
 export async function runForecast(year = null, month = null, expectedIncome = null, isSavingLog = false, allTime = false) {
   const payload = {};
   if (year) payload.year = year;
@@ -174,6 +279,39 @@ export async function updateCutoffDays(startDay, endDay) {
     start_day: Number(data.start_day),
     end_day: Number(data.end_day)
   };
+}
+
+export async function fetchCyclePeriod(year, month) {
+  const res = await fetch(`${API_BASE}/settings/cycle-period?year=${year}&month=${month}`);
+  if (!res.ok) throw new Error('Gagal mengambil periode bulan');
+  return res.json();
+}
+
+export async function updateCyclePeriod(year, month, start, end) {
+  const res = await fetch(`${API_BASE}/settings/cycle-period`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ year, month, start, end })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Gagal menyimpan periode bulan');
+  }
+  return res.json();
+}
+
+export async function fetchSavingsWallets() {
+  const res = await fetch(`${API_BASE}/settings/savings-wallets`);
+  if (!res.ok) throw new Error('Gagal mengambil pengaturan rekening tabungan');
+  return res.json();
+}
+
+export async function updateSavingsWallets(wallets) {
+  const res = await fetch(`${API_BASE}/settings/savings-wallets`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wallets })
+  });
+  if (!res.ok) throw new Error('Gagal menyimpan pengaturan rekening tabungan');
+  return res.json();
 }
 
 export async function updateWalletInitialBalance(id, amount) {

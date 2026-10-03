@@ -11,84 +11,18 @@
             Python ML Model (Scikit-Learn)
           </span>
           <span class="target-month-badge">
-            Siklus Proyeksi: {{ forecastData?.meta?.next_month_name || 'Bulan Depan' }} {{ forecastData?.meta?.next_year || '' }}
+            Siklus Proyeksi: {{ forecastData?.meta?.next_month_name || 'Bulan Ini' }} {{ forecastData?.meta?.next_year || '' }}
           </span>
           <span v-if="isPastMonth" class="history-mode-pill">
             Mode History Lampau
           </span>
         </div>
-        <h3 class="forecast-title">{{ isAllTime ? 'Analisis & Forecasting Seluruh History' : 'Forcasting Pengeluaran & Tabungan Siklus Berikutnya' }}</h3>
+        <h3 class="forecast-title">{{ isAllTime ? 'Analisis & Forecasting Seluruh History' : 'Forecasting Pengeluaran & Tabungan Bulan Terpilih' }}</h3>
         <p class="forecast-desc">
           Model regresi linier & analisis deret waktu di backend Python memproyeksikan estimasi pengeluaran dan jumlah sisa tabungan berdasarkan pola historis.
         </p>
       </div>
 
-      <!-- 1 Log Nilai Acuan Bulan Depan (Editable & Disimpan sebagai 1 Log, Tanpa Tabel Log) -->
-      <div v-if="!isAllTime" class="income-simulator">
-        <!-- Tampilan Ketika 1 Log Tersimpan & Tidak Sedang Di-edit -->
-        <div v-if="savedLog.exists && !isEditingLog" class="saved-log-card">
-          <div class="saved-log-header">
-            <span class="log-badge">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-              1 Log Acuan Bulan Depan
-            </span>
-            <button class="btn-edit-log" @click="startEditLog" title="Edit Nilai Log Ini">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 20h9"/>
-                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-              </svg>
-              Edit Nilai
-            </button>
-          </div>
-          <div class="saved-log-value">
-            {{ formatRupiah(savedLog.amount) }}
-          </div>
-          <div class="saved-log-meta">
-            Target: <strong>{{ savedLog.period || targetPeriodName }}</strong>
-            <span v-if="savedLog.updated_at">• {{ savedLog.updated_at }}</span>
-          </div>
-        </div>
-
-        <!-- Tampilan Input (Saat Belum Ada Log atau Sedang Di-edit) -->
-        <div v-else class="log-input-box">
-          <label class="sim-label">
-            {{ savedLog.exists ? 'Edit Nilai Acuan Bulan Depan (1 Log):' : 'Masukan Nilai Acuan Bulan Depan (Disimpan sbg 1 Log):' }}
-          </label>
-          <div class="sim-input-row">
-            <div class="input-prefix">Rp</div>
-            <input
-              v-model.number="simulatedIncome"
-              type="number"
-              step="100000"
-              class="sim-input"
-              placeholder="Contoh: 8.000.000"
-              @keyup.enter="saveAndRecalculate"
-            />
-            <button
-              class="btn btn-primary btn-sm"
-              :disabled="isLoading"
-              @click="saveAndRecalculate"
-              title="Simpan sebagai 1 log dan hitung ulang"
-            >
-              <span v-if="isLoading" class="spinner"></span>
-              <span v-else>{{ savedLog.exists ? 'Simpan' : 'Simpan Log' }}</span>
-            </button>
-            <button
-              v-if="savedLog.exists"
-              class="btn btn-secondary btn-sm"
-              @click="cancelEditLog"
-              title="Batal edit"
-            >
-              Batal
-            </button>
-          </div>
-          <p class="sim-hint">
-            *Tercatat sebagai 1 log acuan prediksi bulan depan dan dapat diedit kapan saja.
-          </p>
-        </div>
-      </div>
     </div>
 
     <!-- 4 Forecast Metric Cards -->
@@ -150,7 +84,7 @@
       <!-- 4. Pemasukan Acuan -->
       <div class="f-card">
         <div class="f-card-top">
-          <span class="f-label">Acuan Pemasukan Bulan Depan</span>
+          <span class="f-label">Proyeksi Pemasukan Otomatis</span>
           <span class="f-icon text-income">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
               <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
@@ -160,7 +94,7 @@
         </div>
         <div class="f-val text-income">{{ formatRupiah(nextMonthData.projected_income) }}</div>
         <div class="f-footer">
-          <span class="f-sub">Dasar perhitungan rasio tabungan</span>
+          <span class="f-sub">Dihitung dari pola pemasukan historis</span>
         </div>
       </div>
     </div>
@@ -225,10 +159,10 @@
       </div>
     </section>
 
-    <!-- SECTION: EVALUASI AKURASI HASIL FORECASTING TERHADAP BULAN DEPAN -->
-    <!-- Aktif saat melihat bulan-bulan sebelumnya dan bulan depan sudah selesai atau akhir bulan -->
+    <!-- SECTION: EVALUASI AKURASI HASIL FORECASTING TERHADAP PERIODE TERPILIH -->
+    <!-- Aktif saat periode yang dipilih sudah selesai atau mencapai akhir siklus -->
     <div v-if="isPastMonth || accuracyData.is_completed" class="accuracy-section">
-      <!-- Kasus A: Akurasi Berhasil Diverifikasi (Bulan depan selesai/akhir bulan & ada data transaksi riil) -->
+      <!-- Kasus A: Akurasi berhasil diverifikasi dengan data transaksi periode terpilih -->
       <div v-if="accuracyData.can_evaluate" class="accuracy-card verified-card">
         <div class="accuracy-card-header">
           <div class="acc-badge-row">
@@ -247,7 +181,7 @@
             </span>
           </div>
           <p class="acc-desc">
-            Perbandingan tingkat ketepatan antara hasil ramalan AI periode ini dengan data riil yang telah terjadi di bulan depannya.
+            Perbandingan tingkat ketepatan antara hasil ramalan AI dan data riil pada periode yang dipilih.
           </p>
         </div>
 
@@ -268,7 +202,7 @@
             <!-- Pengeluaran Comparison -->
             <div class="comp-row-item">
               <div class="comp-col-label">
-                <div class="comp-title">Pengeluaran Bulan Depan</div>
+                <div class="comp-title">Pengeluaran Periode Terpilih</div>
                 <div class="comp-sub">Hasil ramalan vs terbelanjakan riil</div>
               </div>
               <div class="comp-values-group">
@@ -335,10 +269,10 @@
         <div class="pending-content">
           <div class="pending-title-row">
             <span class="pending-title">Akurasi Peramalan: {{ accuracyData.target_month_name }}</span>
-            <span class="pending-badge">Menunggu Data Bulan Depan</span>
+            <span class="pending-badge">Menunggu Data Periode Terpilih</span>
           </div>
           <p class="pending-desc">
-            {{ accuracyData.status_message || 'Akurasi hasil forcasting dapat dievaluasi ketika data dibulan depannya sudah selesai atau telah mencapai akhir bulan.' }}
+            {{ accuracyData.status_message || 'Akurasi dapat dievaluasi ketika periode yang dipilih sudah selesai atau mencapai akhir siklus.' }}
           </p>
         </div>
       </div>
@@ -424,6 +358,11 @@
           </svg>
           Proyeksi Distribusi Kategori
         </h4>
+
+        <div class="category-total-row">
+          <span>Total Proyeksi Seluruh Kategori</span>
+          <strong>{{ formatRupiah(projectedCategoryTotal) }}</strong>
+        </div>
 
         <div class="cat-bars-list">
           <div
@@ -521,12 +460,6 @@ export default {
       default: false
     }
   },
-  data() {
-    return {
-      simulatedIncome: 0,
-      isEditingLog: false
-    };
-  },
   computed: {
     nextMonthData() {
       return this.forecastData?.forecast_next_month || {};
@@ -539,6 +472,9 @@ export default {
     },
     projectedCategories() {
       return this.nextMonthData.category_breakdown || [];
+    },
+    projectedCategoryTotal() {
+      return this.projectedCategories.reduce((total, item) => total + Number(item.projected_amount || 0), 0);
     },
     categoryDonutStyle() {
       const total = this.projectedCategories.reduce((sum, item) => sum + Number(item.projected_amount || 0), 0);
@@ -562,27 +498,7 @@ export default {
       return this.forecastData?.saved_input_log || {};
     },
     targetPeriodName() {
-      return `${this.forecastData?.meta?.next_month_name || 'Bulan Depan'} ${this.forecastData?.meta?.next_year || ''}`;
-    }
-  },
-  watch: {
-    'savedLog.amount': {
-      immediate: true,
-      handler(val) {
-        if (val) {
-          this.simulatedIncome = val;
-        } else if (this.nextMonthData.projected_income) {
-          this.simulatedIncome = this.nextMonthData.projected_income;
-        }
-      }
-    },
-    'nextMonthData.projected_income': {
-      immediate: true,
-      handler(val) {
-        if (!this.savedLog?.exists && val) {
-          this.simulatedIncome = val;
-        }
-      }
+      return `${this.forecastData?.meta?.next_month_name || 'Bulan Ini'} ${this.forecastData?.meta?.next_year || ''}`;
     }
   },
   methods: {
@@ -595,27 +511,6 @@ export default {
       if (dir === 'menurun') return '↘ Pengeluaran Turun';
       return '→ Pengeluaran Stabil';
     },
-    startEditLog() {
-      this.isEditingLog = true;
-      if (this.savedLog?.amount) {
-        this.simulatedIncome = this.savedLog.amount;
-      }
-    },
-    cancelEditLog() {
-      this.isEditingLog = false;
-      if (this.savedLog?.amount) {
-        this.simulatedIncome = this.savedLog.amount;
-      } else if (this.nextMonthData.projected_income) {
-        this.simulatedIncome = this.nextMonthData.projected_income;
-      }
-    },
-    saveAndRecalculate() {
-      this.$emit('recalculate-forecast', {
-        simulatedIncome: this.simulatedIncome,
-        isSavingLog: true
-      });
-      this.isEditingLog = false;
-    }
   }
 };
 </script>
@@ -1610,6 +1505,24 @@ export default {
   font-size: 0.85rem;
   font-weight: 700;
   color: #ffffff;
+}
+
+.category-total-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: 9px;
+  background: rgba(99, 102, 241, 0.08);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.category-total-row strong {
+  color: var(--planned-text);
+  font-size: 0.95rem;
 }
 
 .cat-bars-list {

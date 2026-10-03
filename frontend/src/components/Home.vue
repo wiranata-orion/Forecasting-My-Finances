@@ -107,29 +107,19 @@
           <label class="cutoff-control">
             <span>Mulai</span>
             <input
-              v-model.number="startDay"
-              type="number"
-              min="1"
-              max="31"
-              step="1"
-              inputmode="numeric"
+              v-model="periodStart"
+              type="date"
               aria-label="Tanggal mulai"
-              @change="saveCutoffDays"
-              @keyup.enter="$event.target.blur()"
+              @change="saveCyclePeriod"
             />
           </label>
           <label class="cutoff-control">
             <span>Selesai</span>
             <input
-              v-model.number="endDay"
-              type="number"
-              min="1"
-              max="31"
-              step="1"
-              inputmode="numeric"
+              v-model="periodEnd"
+              type="date"
               aria-label="Tanggal selesai"
-              @change="saveCutoffDays"
-              @keyup.enter="$event.target.blur()"
+              @change="saveCyclePeriod"
             />
           </label>
         </div>
@@ -138,9 +128,10 @@
       <!-- Section 1: Overview Summary Cards -->
       <OverviewCards
         :month-label="isAllTime ? 'Seluruh History' : currentMonthLabel"
-        :summary="summary.current_month"
+        :summary="overviewSummary"
         :transaction-count="summary.transaction_count"
-        :planned-count="summary.planned_count"
+        :planned-count="overviewPlannedCount"
+        :total-savings="activeSavingsAmount"
       />
 
       <!-- Section 2: Charts Row (Donut Analytics + Daily Bar Analytics) -->
@@ -149,7 +140,10 @@
           :summary="summary.current_month"
           :categories="summary.categories"
           :wallet-balances="walletBalances"
+          :wallets="wallets"
+          :savings-wallets="savingsWallets"
           :is-all-time="isAllTime"
+          @save-savings-wallets="handleSaveSavingsWallets"
         />
 
         <DailyBarAnalytics
@@ -162,9 +156,23 @@
         v-if="!isAllTime"
         :planned-list="filteredPlannedList"
         :summary="summary.current_month"
+        :transactions="filteredTransactions"
         @open-add-planned="isAddPlanOpen = true"
+        @edit-planned="handleEditPlanned"
         @delete-planned="handleDeletePlanned"
         @realize-planned="handleRealizePlanned"
+        :monthly-needs="monthlyNeeds"
+        :monthly-templates="monthlyTemplates"
+        :savings-wallets="savingsWallets"
+        @create-monthly="handleCreateMonthly"
+        @edit-monthly="handleEditMonthly"
+        @delete-monthly="handleDeleteMonthly"
+        @realize-monthly="handleRealizeMonthly"
+        @create-template="handleCreateTemplate"
+        @edit-template="handleEditTemplate"
+        @delete-template="handleDeleteTemplate"
+        @apply-template="handleApplyTemplate"
+        :is-current-month="isViewingCurrentMonth"
       />
 
       <!-- Section 4: Python Machine Learning Forecasting View (hidden in all-time mode) -->
@@ -198,7 +206,8 @@
 
     <AddPlannedModal
       :is-open="isAddPlanOpen"
-      @close="isAddPlanOpen = false"
+      :plan="editingPlanned"
+      @close="closePlannedModal"
       @submit="handleAddPlanned"
     />
   </div>
@@ -223,10 +232,26 @@ import {
   deleteTransaction,
   fetchPlanned,
   createPlanned,
+  updatePlanned,
   deletePlanned,
+  fetchMonthlyNeeds,
+  createMonthlyNeed,
+  updateMonthlyNeed,
+  deleteMonthlyNeed,
+  realizeMonthlyNeed,
+  fetchMonthlyTemplates,
+  createMonthlyTemplate,
+  updateMonthlyTemplate,
+  deleteMonthlyTemplate,
+  applyMonthlyTemplate,
   runForecast,
+  fetchWallets,
   fetchCutoffDays,
-  updateCutoffDays
+  updateCutoffDays,
+  fetchCyclePeriod,
+  updateCyclePeriod,
+  fetchSavingsWallets,
+  updateSavingsWallets
 } from '../services/api.js';
 
 function getActiveCycle(startDay, endDay, today = new Date()) {
@@ -300,12 +325,15 @@ export default {
       selectedMonth: cycle.month,
       startDay: 24,
       endDay: 23,
+      periodStart: '',
+      periodEnd: '',
       isAllTime: false,
 
       isBackendOnline: true,
       isAddTxOpen: false,
       editingTransaction: null,
       isAddPlanOpen: false,
+      editingPlanned: null,
       isForecastLoading: false,
 
       summary: {
@@ -324,7 +352,10 @@ export default {
 
       transactions: [],
       plannedList: [],
+      monthlyNeeds: [],
+      monthlyTemplates: [],
       wallets: [],
+      savingsWallets: [],
       walletBalances: [],
       forecastData: null,
 
@@ -349,18 +380,17 @@ export default {
       return `${monthNames[this.selectedMonth] || ''} ${this.selectedYear}`;
     },
     cycleStartLabel() {
-      const { start } = getCycleBounds(this.selectedYear, this.selectedMonth, this.startDay, this.endDay);
       const formatter = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short' });
-      return formatter.format(start);
+      return this.periodStart ? formatter.format(new Date(`${this.periodStart}T00:00:00`)) : '-';
     },
     cycleEndLabel() {
-      const { end } = getCycleBounds(this.selectedYear, this.selectedMonth, this.startDay, this.endDay);
       const formatter = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short' });
-      return formatter.format(end);
+      return this.periodEnd ? formatter.format(new Date(`${this.periodEnd}T00:00:00`)) : '-';
     },
     filteredPlannedList() {
       if (this.isAllTime) return this.plannedList;
-      const { start, end } = getCycleBounds(this.selectedYear, this.selectedMonth, this.startDay, this.endDay);
+      const start = new Date(`${this.periodStart}T00:00:00`);
+      const end = new Date(`${this.periodEnd}T00:00:00`);
       const startDate = toISODate(start);
       const endDate = toISODate(end);
       return this.plannedList.filter(item => item.date >= startDate && item.date <= endDate);
@@ -369,14 +399,57 @@ export default {
       if (this.isAllTime) {
         return this.transactions;
       }
-      const { start, end } = getCycleBounds(this.selectedYear, this.selectedMonth, this.startDay, this.endDay);
+      const start = new Date(`${this.periodStart}T00:00:00`);
+      const end = new Date(`${this.periodEnd}T00:00:00`);
       const startDate = toISODate(start);
       const endDate = toISODate(end);
       return this.transactions.filter(tx => {
         if (!tx.date) return false;
         const transactionDate = tx.date.slice(0, 10);
+        if (this.isViewingCurrentMonth && transactionDate > toISODate(new Date())) return false;
         return transactionDate >= startDate && transactionDate <= endDate;
       });
+    },
+    overviewMonthlyTotal() {
+      if (this.isAllTime) return 0;
+      return this.monthlyNeeds.reduce((total, item) => {
+        if (item.type && item.type !== 'expense') return total;
+        return total + Number(item.amount || 0) * Number(item.remaining_occurrences || 0);
+      }, 0);
+    },
+    overviewPlannedTotal() {
+      if (this.isAllTime) return Number(this.summary.current_month.total_planned || 0);
+      const plannedTotal = this.filteredPlannedList.reduce((total, item) => total + Number(item.amount || 0), 0);
+      return plannedTotal + this.overviewMonthlyTotal;
+    },
+    overviewSummary() {
+      return {
+        ...this.summary.current_month,
+        total_planned: this.overviewPlannedTotal
+      };
+    },
+    overviewPlannedCount() {
+      return this.isAllTime ? this.summary.planned_count : this.filteredPlannedList.length + this.monthlyNeeds.length;
+    },
+    overviewTotalSavings() {
+      return Number(this.summary.current_month.sisa_tabungan || 0)
+        - Number(this.overviewPlannedTotal || 0);
+    },
+    activeSavingsAmount() {
+      const activeWallets = new Set(this.savingsWallets.map(wallet => String(wallet).trim()));
+      if (!activeWallets.size) return 0;
+      return this.filteredTransactions.reduce((total, tx) => {
+        const wallet = String(tx.wallet || '').trim();
+        const transferTo = String(tx.transfer_to || '').trim();
+        const amount = Number(tx.amount || 0);
+        if (tx.type === 'transfer') {
+          return total - (activeWallets.has(wallet) ? amount : 0) + (activeWallets.has(transferTo) ? amount : 0);
+        }
+        if (!activeWallets.has(wallet)) return total;
+        if (tx.type === 'income') return total + amount;
+        if (tx.type === 'expense' && tx.savings_status === 'savings') return total - amount;
+        return total;
+      }, 0);
     }
   },
   async mounted() {
@@ -388,6 +461,7 @@ export default {
       const cycle = getActiveCycle(this.startDay, this.endDay);
       this.selectedYear = cycle.year;
       this.selectedMonth = cycle.month;
+      await this.loadCyclePeriod();
     } catch (err) {
       console.error('Error loading payday cut-off:', err);
     }
@@ -416,7 +490,7 @@ export default {
     async setViewMode(allTime) {
       const savedScroll = window.scrollY;
       this.isAllTime = allTime;
-      await Promise.all([this.refreshSummary(), this.refreshForecast()]);
+      await this.refreshAllData();
       this.$nextTick(() => {
         window.scrollTo({ top: savedScroll, behavior: 'instant' });
       });
@@ -440,7 +514,8 @@ export default {
       }
       this.selectedMonth = m;
       this.selectedYear = y;
-      await Promise.all([this.refreshSummary(), this.refreshForecast()]);
+      await this.loadCyclePeriod();
+      await this.refreshAllData();
       this.$nextTick(() => {
         window.scrollTo({ top: savedScroll, behavior: 'instant' });
       });
@@ -452,7 +527,8 @@ export default {
       this.selectedYear = current.year;
       this.selectedMonth = current.month;
       this.isAllTime = false;
-      await Promise.all([this.refreshSummary(), this.refreshForecast()]);
+      await this.loadCyclePeriod();
+      await this.refreshAllData();
       this.$nextTick(() => {
         window.scrollTo({ top: savedScroll, behavior: 'instant' });
       });
@@ -481,15 +557,23 @@ export default {
 
     async refreshAllData() {
       try {
-        const [sumRes, txRes, planRes, fcRes] = await Promise.all([
+        const [sumRes, txRes, planRes, monthlyRes, templateRes, walletRes, savingsRes, fcRes] = await Promise.all([
           fetchSummary(this.selectedYear, this.selectedMonth, this.isAllTime),
           fetchTransactions(),
           fetchPlanned(),
+          fetchMonthlyNeeds(this.selectedYear, this.selectedMonth),
+          fetchMonthlyTemplates(),
+          fetchWallets(),
+          fetchSavingsWallets(),
           runForecast(this.selectedYear, this.selectedMonth, null, false, this.isAllTime)
         ]);
         this.summary = sumRes;
         this.transactions = txRes;
         this.plannedList = planRes;
+        this.monthlyNeeds = monthlyRes;
+        this.monthlyTemplates = templateRes;
+        this.wallets = walletRes;
+        this.savingsWallets = savingsRes.wallets || [];
         this.forecastData = fcRes;
         this.walletBalances = sumRes.wallet_balances || [];
         this.isBackendOnline = true;
@@ -538,13 +622,29 @@ export default {
 
     async handleAddPlanned(planData) {
       try {
-        await createPlanned(planData);
+        const wasEditing = Boolean(this.editingPlanned);
+        if (wasEditing) {
+          await updatePlanned(this.editingPlanned.id, planData);
+        } else {
+          await createPlanned(planData);
+        }
         this.isAddPlanOpen = false;
-        this.showToast('Rencana pengeluaran berhasil disimpan');
+        this.editingPlanned = null;
+        this.showToast(wasEditing ? 'Rencana pengeluaran diperbarui' : 'Rencana pengeluaran berhasil disimpan');
         await this.refreshAllData();
       } catch (err) {
         this.showToast(err.message || 'Gagal menambahkan rencana', 'error');
       }
+    },
+
+    handleEditPlanned(item) {
+      this.editingPlanned = { ...item };
+      this.isAddPlanOpen = true;
+    },
+
+    closePlannedModal() {
+      this.isAddPlanOpen = false;
+      this.editingPlanned = null;
     },
 
     async handleDeletePlanned(id) {
@@ -558,12 +658,115 @@ export default {
       }
     },
 
+    async handleCreateMonthly(item) {
+      try {
+        await createMonthlyNeed({ ...item, year: this.selectedYear, month: this.selectedMonth });
+        this.showToast('Template kebutuhan bulanan disimpan');
+        await this.refreshAllData();
+      } catch (err) {
+        this.showToast(err.message || 'Gagal menyimpan template', 'error');
+      }
+    },
+
+    async handleEditMonthly(item) {
+      try {
+        await updateMonthlyNeed(item.id, { ...item, year: this.selectedYear, month: this.selectedMonth });
+        this.showToast('Template kebutuhan diperbarui');
+        await this.refreshAllData();
+      } catch (err) {
+        this.showToast(err.message || 'Gagal memperbarui template', 'error');
+      }
+    },
+
+    async handleDeleteMonthly(id) {
+      if (!confirm('Hapus template kebutuhan bulanan ini?')) return;
+      try {
+        await deleteMonthlyNeed(id);
+        this.showToast('Template kebutuhan dihapus');
+        await this.refreshAllData();
+      } catch (err) {
+        this.showToast(err.message || 'Gagal menghapus template', 'error');
+      }
+    },
+
+    async handleRealizeMonthly({ item, quantity }) {
+      try {
+        await realizeMonthlyNeed(item.id, this.selectedYear, this.selectedMonth, Number(quantity) || 1);
+        this.showToast(`${quantity} transaksi ${item.title} masuk ke log`);
+        await this.refreshAllData();
+      } catch (err) {
+        this.showToast(err.message || 'Gagal mengirim template ke log', 'error');
+      }
+    },
+
+    async handleCreateTemplate(item) {
+      try {
+        await createMonthlyTemplate(item);
+        this.showToast('Template kebutuhan reusable disimpan');
+        this.monthlyTemplates = await fetchMonthlyTemplates();
+      } catch (err) {
+        this.showToast(err.message || 'Gagal menyimpan template', 'error');
+      }
+    },
+
+    async handleEditTemplate(item) {
+      try {
+        await updateMonthlyTemplate(item.id, item);
+        this.showToast('Template kebutuhan diperbarui');
+        this.monthlyTemplates = await fetchMonthlyTemplates();
+      } catch (err) {
+        this.showToast(err.message || 'Gagal memperbarui template', 'error');
+      }
+    },
+
+    async handleDeleteTemplate(id) {
+      if (!confirm('Hapus template reusable ini?')) return;
+      try {
+        await deleteMonthlyTemplate(id);
+        this.showToast('Template kebutuhan dihapus');
+        this.monthlyTemplates = await fetchMonthlyTemplates();
+      } catch (err) {
+        this.showToast(err.message || 'Gagal menghapus template', 'error');
+      }
+    },
+
+    async handleSaveSavingsWallets(wallets) {
+      try {
+        const result = await updateSavingsWallets(wallets);
+        this.savingsWallets = result.wallets || [];
+        this.showToast('Pengaturan rekening tabungan disimpan');
+      } catch (err) {
+        this.showToast(err.message || 'Gagal menyimpan rekening tabungan', 'error');
+      }
+    },
+
+    async handleApplyTemplate(id) {
+      try {
+        await applyMonthlyTemplate(id, this.selectedYear, this.selectedMonth);
+        this.showToast('Template diterapkan ke kebutuhan bulan ini');
+        await this.refreshAllData();
+      } catch (err) {
+        if (err.requiresConfirmation && confirm('Bulan ini sudah memiliki list kebutuhan. Tambahkan isi template ke list yang sudah ada?')) {
+          try {
+            await applyMonthlyTemplate(id, this.selectedYear, this.selectedMonth, true);
+            this.showToast('Isi template ditambahkan ke list kebutuhan bulan ini');
+            await this.refreshAllData();
+          } catch (applyError) {
+            this.showToast(applyError.message || 'Gagal menambahkan template', 'error');
+          }
+          return;
+        }
+        this.showToast(err.message || 'Gagal menerapkan template', 'error');
+      }
+    },
+
     async handleRealizePlanned(item) {
       try {
         await createTransaction({
           amount: item.amount,
           description: item.title,
           category: item.category,
+          wallet: item.wallet || '',
           date: new Date().toISOString().split('T')[0],
           type: 'expense'
         });
@@ -596,27 +799,32 @@ export default {
         this.isForecastLoading = false;
       }
     },
-    async saveCutoffDays() {
-      const previous = await fetchCutoffDays().catch(() => ({ start_day: 24, end_day: 23 }));
-      const isValidDay = value => Number.isInteger(value) && value >= 1 && value <= 31;
-      if (!isValidDay(this.startDay) || !isValidDay(this.endDay)) {
-        this.startDay = previous.start_day;
-        this.endDay = previous.end_day;
-        this.showToast('Tanggal mulai dan selesai harus antara 1 dan 31', 'error');
+    async loadCyclePeriod() {
+      try {
+        const period = await fetchCyclePeriod(this.selectedYear, this.selectedMonth);
+        this.periodStart = period.start;
+        this.periodEnd = period.end;
+      } catch (err) {
+        console.error('Error loading cycle period:', err);
+      }
+    },
+    async saveCyclePeriod() {
+      const previousStart = this.periodStart;
+      const previousEnd = this.periodEnd;
+      if (!this.periodStart || !this.periodEnd || this.periodStart > this.periodEnd) {
+        await this.loadCyclePeriod();
+        this.showToast('Tanggal mulai dan selesai harus valid', 'error');
         return;
       }
       try {
-        const saved = await updateCutoffDays(this.startDay, this.endDay);
-        this.startDay = saved.start_day;
-        this.endDay = saved.end_day;
-        const cycle = getActiveCycle(this.startDay, this.endDay);
-        this.selectedYear = cycle.year;
-        this.selectedMonth = cycle.month;
+        const saved = await updateCyclePeriod(this.selectedYear, this.selectedMonth, this.periodStart, this.periodEnd);
+        this.periodStart = saved.start;
+        this.periodEnd = saved.end;
         await this.refreshAllData();
-        this.showToast(`Periode diubah: ${this.startDay} sampai ${this.endDay}`);
+        this.showToast(`Periode ${this.currentMonthLabel} disimpan`);
       } catch (err) {
-        this.startDay = previous.start_day;
-        this.endDay = previous.end_day;
+        this.periodStart = previousStart;
+        this.periodEnd = previousEnd;
         this.showToast(err.message || 'Gagal menyimpan periode', 'error');
       }
     }

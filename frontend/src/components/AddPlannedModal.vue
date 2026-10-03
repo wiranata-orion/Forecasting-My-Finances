@@ -1,8 +1,8 @@
 <template>
-  <div v-if="isOpen" class="modal-overlay" @click.self="$emit('close')">
+  <div v-if="isOpen" class="modal-overlay">
     <div class="modal-dialog">
       <div class="modal-header">
-        <h3 class="modal-title">Tambah Kemungkinan Pengeluaran</h3>
+        <h3 class="modal-title">{{ plan ? 'Edit Kemungkinan Pengeluaran' : 'Tambah Kemungkinan Pengeluaran' }}</h3>
         <button class="modal-close-btn" @click="$emit('close')">×</button>
       </div>
 
@@ -49,6 +49,16 @@
                 {{ cat }}
               </option>
             </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Bank / Rekening Tujuan</label>
+            <input
+              v-model="form.wallet"
+              type="text"
+              class="form-input"
+              placeholder="Contoh: BNI, SeaBank, Cash"
+            />
           </div>
 
           <!-- Probabilitas -->
@@ -100,7 +110,7 @@
             Batal
           </button>
           <button type="submit" class="btn btn-primary">
-            Simpan Rencana
+            {{ plan ? 'Simpan Perubahan' : 'Simpan Rencana' }}
           </button>
         </div>
       </form>
@@ -126,6 +136,10 @@ export default {
     isOpen: {
       type: Boolean,
       default: false
+    },
+    plan: {
+      type: Object,
+      default: null
     }
   },
   emits: ['close', 'submit'],
@@ -138,6 +152,7 @@ export default {
         title: '',
         amount: null,
         category: CATEGORIES[0],
+        wallet: '',
         probability: 90,
         date: today,
         notes: ''
@@ -150,6 +165,21 @@ export default {
       const cleaned = this.rawAmount.replace(/\D/g, '');
       if (!cleaned) return '';
       return cleaned.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    }
+  },
+  watch: {
+    isOpen(value) {
+      if (!value) return;
+      if (this.plan) {
+        this.rawAmount = String(Math.round(Number(this.plan.amount || 0)));
+        this.form = {
+          title: this.plan.title || '', amount: Number(this.plan.amount || 0),
+          category: this.plan.category || CATEGORIES[0], probability: Number(this.plan.probability || 100),
+          wallet: this.plan.wallet || '', date: this.plan.date || new Date().toISOString().split('T')[0], notes: this.plan.notes || ''
+        };
+      } else {
+        this.resetForm();
+      }
     }
   },
   methods: {
@@ -173,6 +203,7 @@ export default {
         title: '',
         amount: null,
         category: CATEGORIES[0],
+        wallet: '',
         probability: 90,
         date: today,
         notes: ''

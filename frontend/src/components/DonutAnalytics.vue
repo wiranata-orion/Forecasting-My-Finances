@@ -40,6 +40,29 @@
             <span class="center-sub">{{ centerSub }}</span>
           </div>
         </div>
+        <div v-if="activeMode === 'wallet'" class="savings-wallet-settings">
+          <div class="settings-heading">
+            <div>
+              <div class="settings-title">Rekening Tabungan Aktif</div>
+              <p class="settings-hint">{{ selectedSavingsWallets.length }} rekening dipilih sebagai tabungan.</p>
+            </div>
+            <button class="settings-toggle" @click="showSavingsSettings = !showSavingsSettings">
+              {{ showSavingsSettings ? 'Sembunyikan' : 'Atur' }}
+            </button>
+          </div>
+          <div v-if="showSavingsSettings">
+            <div v-if="walletOptions.length" class="savings-wallet-options">
+              <label v-for="wallet in walletOptions" :key="wallet" class="savings-wallet-option">
+                <input v-model="selectedSavingsWallets" type="checkbox" :value="wallet">
+                <span>{{ wallet }}</span>
+              </label>
+            </div>
+            <p v-else class="settings-hint">Belum ada rekening di database.</p>
+            <button class="btn btn-primary btn-sm" :disabled="isSavingWallets" @click="saveSavingsWallets">
+              {{ isSavingWallets ? 'Menyimpan...' : 'Simpan Pengaturan' }}
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="legend-wrapper">
@@ -189,6 +212,7 @@
               <span class="legend-amt">{{ formatRupiah(item.balance) }}</span>
             </div>
           </div>
+
         </div>
       </div>
     </div>
@@ -224,15 +248,27 @@ export default {
       type: Array,
       default: () => []
     },
+    wallets: {
+      type: Array,
+      default: () => []
+    },
+    savingsWallets: {
+      type: Array,
+      default: () => []
+    },
     isAllTime: {
       type: Boolean,
       default: false
     }
   },
+  emits: ['save-savings-wallets'],
   data() {
     return {
       activeMode: 'finance',
       chartInstance: null,
+      selectedSavingsWallets: [],
+      isSavingWallets: false,
+      showSavingsSettings: false,
       centerTitle: 'Sisa Tabungan',
       centerAmount: 0,
       centerSub: 'Siap dialokasikan'
@@ -268,6 +304,9 @@ export default {
       if (!this.walletBalances || this.walletBalances.length === 0) return [];
       return this.walletBalances;
     },
+    walletOptions() {
+      return Array.from(new Set(this.wallets.map(wallet => typeof wallet === 'string' ? wallet : wallet.name).filter(Boolean)));
+    },
     walletTotal() {
       return this.walletItems.reduce((acc, cur) => acc + (cur.balance || 0), 0);
     }
@@ -302,6 +341,12 @@ export default {
           });
         }
       }
+    },
+    savingsWallets: {
+      immediate: true,
+      handler(value) {
+        this.selectedSavingsWallets = [...(value || [])];
+      }
     }
   },
   mounted() {
@@ -325,6 +370,11 @@ export default {
       this.$nextTick(() => {
         this.renderChart();
       });
+    },
+    saveSavingsWallets() {
+      this.isSavingWallets = true;
+      this.$emit('save-savings-wallets', [...this.selectedSavingsWallets]);
+      this.isSavingWallets = false;
     },
     getCategoryColor(idx) {
       return CATEGORY_COLORS[idx % CATEGORY_COLORS.length];
@@ -562,6 +612,8 @@ export default {
   position: relative;
   width: 100%;
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
 }
 
@@ -636,6 +688,85 @@ export default {
 .wallet-total-box {
   background: linear-gradient(135deg, rgba(56, 189, 248, 0.08) 0%, rgba(99, 102, 241, 0.06) 100%);
   border-color: rgba(56, 189, 248, 0.2);
+}
+
+.savings-wallet-settings {
+  width: 100%;
+  max-width: 320px;
+  margin-top: 0.75rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: 10px;
+  background: rgba(16, 185, 129, 0.06);
+}
+
+.settings-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.settings-count {
+  flex: 0 0 auto;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.14);
+  color: var(--income-text);
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.settings-toggle {
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: 6px;
+  padding: 0.3rem 0.55rem;
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--income-text);
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.settings-toggle:hover {
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.settings-title {
+  color: var(--text-main);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.settings-hint {
+  margin: 0.25rem 0 0.65rem;
+  color: var(--text-dim);
+  font-size: 0.68rem;
+}
+
+.savings-wallet-option {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.35rem 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.savings-wallet-option input {
+  accent-color: var(--income);
+}
+
+.savings-wallet-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem 0.6rem;
+}
+
+.savings-wallet-settings .btn {
+  width: 100%;
+  margin-top: 0.65rem;
 }
 
 .total-label-row {

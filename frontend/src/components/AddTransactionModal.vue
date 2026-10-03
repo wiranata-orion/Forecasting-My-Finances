@@ -1,5 +1,5 @@
 <template>
-  <div v-if="isOpen" class="modal-overlay" @click.self="$emit('close')">
+  <div v-if="isOpen" class="modal-overlay">
     <div class="modal-dialog">
       <div class="modal-header">
         <h3 class="modal-title">{{ transaction ? 'Edit Transaksi' : 'Tambah Transaksi Baru' }}</h3>
