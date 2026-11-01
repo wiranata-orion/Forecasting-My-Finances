@@ -20,7 +20,10 @@
           </svg>
           Arus Masuk
         </span>
-        <span class="sub-text">Memperbesar kapasitas donat</span>
+        <span v-if="summary.start_balance || summary.carry_over_balance" class="sub-text">
+          + Sisa bulan lalu {{ formatRupiah(summary.start_balance || summary.carry_over_balance) }}
+        </span>
+        <span v-else class="sub-text">Memperbesar kapasitas donat</span>
       </div>
     </div>
 
@@ -79,7 +82,10 @@
         <span class="badge badge-savings">
           Saldo seluruh rekening
         </span>
-        <span class="sub-text">Dihitung dari mutasi saldo</span>
+        <span v-if="summary.start_balance || summary.carry_over_balance" class="sub-text">
+          Diteruskan dari {{ formatRupiah(summary.start_balance || summary.carry_over_balance) }}
+        </span>
+        <span v-else class="sub-text">Dihitung dari mutasi saldo</span>
       </div>
     </div>
 

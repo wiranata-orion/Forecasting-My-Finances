@@ -665,21 +665,20 @@ def get_summary():
             transaction_date = datetime.strptime(str(tx['date'])[:10], '%Y-%m-%d').date()
         except (KeyError, TypeError, ValueError):
             continue
-        if not is_all_time and not start_date <= transaction_date <= end_date:
-            continue
-        if not is_all_time and start_date <= today <= end_date and transaction_date > today:
-            continue
+        if not is_all_time:
+            if transaction_date < start_date or transaction_date > end_date:
+                continue
         cur_txs.append(tx)
         date_key = transaction_date.isoformat()
         daily = daily_map.setdefault(date_key, {'date': date_key, 'income': 0.0, 'expense': 0.0, 'count': 0})
         amount = float(tx.get('amount', 0))
-        if is_salary_income(tx):
+        if tx.get('type') == 'income':
             daily['income'] += amount
         elif tx.get('type') == 'expense':
             daily['expense'] += amount
         daily['count'] += 1
 
-    total_income = sum(float(tx['amount']) for tx in cur_txs if is_salary_income(tx))
+    total_income = sum(float(tx['amount']) for tx in cur_txs if tx.get('type') == 'income')
     total_expense = sum(float(tx['amount']) for tx in cur_txs if tx.get('type') == 'expense')
     total_planned = 0.0
     planned_count = 0
@@ -695,16 +694,23 @@ def get_summary():
 
     all_wallet_balances = database.get_wallet_balances()
     total_funds = sum(item['balance'] for item in all_wallet_balances)
+
+    cycle_wallet_balances = database.get_wallet_balances(
+        start_date.isoformat() if not is_all_time else None,
+        end_date.isoformat() if not is_all_time else None
+    )
+    total_start_balance = sum(item.get('start_balance', 0.0) for item in cycle_wallet_balances) if not is_all_time else 0.0
+    total_funds_period = sum(item['balance'] for item in cycle_wallet_balances) if not is_all_time else total_funds
+
     category_map = {}
     for tx in cur_txs:
         if tx.get('type') == 'expense':
             category = tx.get('category', 'Lainnya')
             category_map[category] = category_map.get(category, 0) + float(tx.get('amount', 0))
 
-    cycle_wallet_balances = database.get_wallet_balances(
-        start_date.isoformat() if not is_all_time else None,
-        end_date.isoformat() if not is_all_time else None
-    )
+    total_capacity = total_start_balance + total_income if not is_all_time else total_income
+    savings_ratio = round((total_funds_period / total_capacity * 100), 1) if total_capacity > 0 else 0
+
     return jsonify({
         'current_month': {
             'is_all_time': is_all_time,
@@ -715,11 +721,13 @@ def get_summary():
             'period_end': end_date.isoformat() if not is_all_time else None,
             'start_day': start_day,
             'end_day': end_day,
+            'start_balance': total_start_balance,
+            'carry_over_balance': total_start_balance,
             'total_income': total_income,
             'total_expense': total_expense,
             'total_planned': total_planned,
-            'sisa_tabungan': total_funds,
-            'savings_ratio': 0,
+            'sisa_tabungan': total_funds_period,
+            'savings_ratio': savings_ratio,
             'savings_status_amount': calculate_active_savings_amount(cur_txs)
         },
         'daily_analytics': sorted(daily_map.values(), key=lambda item: item['date']),
@@ -730,6 +738,7 @@ def get_summary():
         'transaction_count': len(cur_txs),
         'planned_count': planned_count,
         'wallet_balances': cycle_wallet_balances,
+        'period_wallet_balances': cycle_wallet_balances,
         'all_wallet_balances': all_wallet_balances
     })
 

@@ -139,7 +139,7 @@
         <DonutAnalytics
           :summary="summary.current_month"
           :categories="summary.categories"
-          :wallet-balances="walletBalances"
+          :wallet-balances="periodWalletBalances"
           :wallets="wallets"
           :savings-wallets="savingsWallets"
           :is-all-time="isAllTime"
@@ -357,6 +357,8 @@ export default {
       wallets: [],
       savingsWallets: [],
       walletBalances: [],
+      allWalletBalances: [],
+      periodWalletBalances: [],
       forecastData: null,
 
       toast: {
@@ -406,7 +408,6 @@ export default {
       return this.transactions.filter(tx => {
         if (!tx.date) return false;
         const transactionDate = tx.date.slice(0, 10);
-        if (this.isViewingCurrentMonth && transactionDate > toISODate(new Date())) return false;
         return transactionDate >= startDate && transactionDate <= endDate;
       });
     },
@@ -438,18 +439,10 @@ export default {
     activeSavingsAmount() {
       const activeWallets = new Set(this.savingsWallets.map(wallet => String(wallet).trim()));
       if (!activeWallets.size) return 0;
-      return this.filteredTransactions.reduce((total, tx) => {
-        const wallet = String(tx.wallet || '').trim();
-        const transferTo = String(tx.transfer_to || '').trim();
-        const amount = Number(tx.amount || 0);
-        if (tx.type === 'transfer') {
-          return total - (activeWallets.has(wallet) ? amount : 0) + (activeWallets.has(transferTo) ? amount : 0);
-        }
-        if (!activeWallets.has(wallet)) return total;
-        if (tx.type === 'income') return total + amount;
-        if (tx.type === 'expense' && tx.savings_status === 'savings') return total - amount;
-        return total;
-      }, 0);
+      // Use period-scoped wallet balances: reflects savings at the selected period's end date
+      return this.periodWalletBalances
+        .filter(w => activeWallets.has(String(w.wallet || '').trim()))
+        .reduce((total, w) => total + Number(w.balance || 0), 0);
     }
   },
   async mounted() {
@@ -538,6 +531,8 @@ export default {
       try {
         this.summary = await fetchSummary(this.selectedYear, this.selectedMonth, this.isAllTime);
         this.walletBalances = this.summary.wallet_balances || [];
+        this.allWalletBalances = this.summary.all_wallet_balances || [];
+        this.periodWalletBalances = this.summary.period_wallet_balances || this.summary.all_wallet_balances || [];
       } catch (err) {
         console.error('Error fetching summary:', err);
       }
@@ -576,6 +571,9 @@ export default {
         this.savingsWallets = savingsRes.wallets || [];
         this.forecastData = fcRes;
         this.walletBalances = sumRes.wallet_balances || [];
+        this.allWalletBalances = sumRes.all_wallet_balances || [];
+        // period_wallet_balances: balances as of selected period end. Fall back to all_wallet_balances
+        this.periodWalletBalances = sumRes.period_wallet_balances || sumRes.all_wallet_balances || [];
         this.isBackendOnline = true;
       } catch (err) {
         console.error('Error fetching dashboard data:', err);

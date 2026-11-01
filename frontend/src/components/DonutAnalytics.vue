@@ -71,7 +71,7 @@
           <!-- Total Pemasukan Banner -->
           <div class="pool-total-box">
             <div class="total-label-row">
-              <span class="total-tag">Total Alokasi Siklus</span>
+              <span class="total-tag">Total Kapasitas Dana Siklus</span>
               <span class="total-val">{{ formatRupiah(totalBasis) }}</span>
             </div>
             <div class="total-progress-track">
@@ -92,7 +92,10 @@
               ></div>
             </div>
             <p class="pool-hint">
-              Saldo tersimpan adalah jumlah uang saat ini di seluruh rekening.
+              <span v-if="!isAllTime && (safeSummary.start_balance || safeSummary.carry_over_balance)">
+                Sisa bulan lalu: {{ formatRupiah(safeSummary.start_balance || safeSummary.carry_over_balance) }} (diteruskan) · 
+              </span>
+              Saldo tersimpan saat ini di seluruh rekening: {{ formatRupiah(safeSummary.sisa_tabungan) }}.
             </p>
           </div>
 
@@ -102,7 +105,12 @@
               <span class="color-dot dot-savings"></span>
               <div>
                 <div class="legend-name">Total Uang Tersimpan</div>
-                <div class="legend-sub">Saldo saat ini seluruh rekening</div>
+                <div class="legend-sub">
+                  <span v-if="!isAllTime && (safeSummary.start_balance || safeSummary.carry_over_balance)">
+                    Diteruskan dari {{ formatRupiah(safeSummary.start_balance || safeSummary.carry_over_balance) }}
+                  </span>
+                  <span v-else>Saldo saat ini seluruh rekening</span>
+                </div>
               </div>
             </div>
             <div class="legend-right">
@@ -175,12 +183,12 @@
                   <rect x="2" y="5" width="20" height="14" rx="2"/>
                   <line x1="2" y1="10" x2="22" y2="10"/>
                 </svg>
-                {{ isAllTime ? 'Total Saldo Tersimpan' : 'Mutasi Bersih Siklus' }}
+              {{ isAllTime ? 'Total Saldo Tersimpan' : 'Saldo s.d. Akhir Periode' }}
               </span>
               <span class="total-val">{{ formatRupiah(walletTotal) }}</span>
             </div>
             <p class="pool-hint">
-              {{ isAllTime ? 'Saldo akumulatif dari seluruh log transaksi.' : 'Hanya mutasi rekening pada siklus terpilih.' }}
+              {{ isAllTime ? 'Saldo akumulatif dari seluruh log transaksi.' : 'Saldo kumulatif per rekening s.d. akhir periode yang dipilih.' }}
             </p>
           </div>
 
@@ -205,7 +213,12 @@
               ></span>
               <div>
                 <div class="legend-name">{{ item.wallet }}</div>
-                <div class="legend-sub">{{ getWalletPct(item.balance) }}% dari total uang</div>
+                <div class="legend-sub">
+                  <span v-if="item.start_balance !== undefined && !isAllTime">
+                    Sisa bulan lalu: {{ formatRupiah(item.start_balance) }} · 
+                  </span>
+                  {{ getWalletPct(item.balance) }}% dari total uang
+                </div>
               </div>
             </div>
             <div class="legend-right">
@@ -281,15 +294,19 @@ export default {
         total_expense: 0,
         total_planned: 0,
         sisa_tabungan: 0,
+        start_balance: 0,
+        carry_over_balance: 0,
         savings_ratio: 0
       };
     },
     totalBasis() {
-      return Math.max(1,
-        (this.safeSummary.sisa_tabungan || 0)
-        + (this.safeSummary.total_expense || 0)
-        + (this.safeSummary.total_planned || 0)
-      );
+      if (this.isAllTime) {
+        return Math.max(1, (this.safeSummary.sisa_tabungan || 0) + (this.safeSummary.total_expense || 0));
+      }
+      const startBalance = Number(this.safeSummary.start_balance ?? this.safeSummary.carry_over_balance ?? 0);
+      const income = Number(this.safeSummary.total_income || 0);
+      const capacity = startBalance + income;
+      return Math.max(1, capacity > 0 ? capacity : ((this.safeSummary.sisa_tabungan || 0) + (this.safeSummary.total_expense || 0)));
     },
     savingsPct() {
       return Math.round(((this.safeSummary.sisa_tabungan || 0) / this.totalBasis) * 100);
@@ -403,9 +420,9 @@ export default {
           this.centerSub = 'Saldo saat ini seluruh rekening';
         }
       } else {
-        this.centerTitle = this.isAllTime ? 'Total Saldo Tersimpan' : 'Mutasi Bersih Siklus';
+        this.centerTitle = this.isAllTime ? 'Total Saldo Tersimpan' : 'Saldo s.d. Akhir Periode';
         this.centerAmount = this.walletTotal;
-        this.centerSub = `${this.walletItems.length} tempat`;
+        this.centerSub = `${this.walletItems.length} rekening`;
       }
     },
     hoverSegment(idx) {
@@ -479,7 +496,7 @@ export default {
         }
       } else {
         // Wallet mode
-        const items = this.walletItems;
+        const items = this.walletItems.filter(i => (i.balance || 0) > 0);
         if (items.length === 0) {
           labels = ['Belum ada saldo'];
           data = [1];

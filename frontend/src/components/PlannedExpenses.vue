@@ -61,8 +61,8 @@
 
       <div class="impact-col">
         <span class="impact-label">Perkiraan Total Sisa Uang Bulan Ini</span>
-        <span class="impact-val text-savings">{{ formatRupiah(availableAfterExpensesAndNeeds - totalPlannedAmount) }}</span>
-        <span class="impact-sub">Total rencana dikurangi dari sisa dana</span>
+        <span class="impact-val text-savings">{{ formatRupiah(availableAfterExpensesAndNeeds - plannedImpactAmount) }}</span>
+        <span class="impact-sub">Rencana non-tabungan dikurangi dari sisa dana</span>
       </div>
 
       <div class="impact-divider"></div>
@@ -70,7 +70,7 @@
       <div class="impact-col">
         <span class="impact-label">Total Tabungan Akhir</span>
         <span class="impact-val text-income">{{ formatRupiah(totalSavingsAmount) }}</span>
-        <span class="impact-sub">Saldo seluruh rekening - semua kebutuhan dan kemungkinan pengeluaran</span>
+        <span class="impact-sub">Saldo seluruh rekening - kebutuhan dan kemungkinan pengeluaran non-tabungan</span>
       </div>
     </div>
 
@@ -79,7 +79,7 @@
       <div class="impact-divider"></div>
       <div class="impact-col"><span class="impact-label">Sudah Masuk Log</span><span class="impact-val text-income">{{ formatRupiah(monthlyCommitted) }}</span><span class="impact-sub">{{ monthlyCommittedCount }} transaksi</span></div>
       <div class="impact-divider"></div>
-      <div class="impact-col"><span class="impact-label">Perkiraan Sisa Uang</span><span class="impact-val text-savings">{{ formatRupiah(availableAfterExpensesAndNeeds) }}</span><span class="impact-sub">Pemasukan - pengeluaran riil - semua kebutuhan</span></div>
+      <div class="impact-col"><span class="impact-label">Perkiraan Sisa Uang</span><span class="impact-val text-savings">{{ formatRupiah(availableAfterExpensesAndNeeds) }}</span><span class="impact-sub">Pemasukan - pengeluaran riil non-tabungan - kebutuhan non-tabungan</span></div>
     </div>
 
     <div v-if="activeMode === 'wallet' && !showTemplateView" class="wallet-chart">
@@ -305,6 +305,11 @@ export default {
     totalPlannedAmount() {
       return this.plannedList.reduce((acc, cur) => acc + (Number(cur.amount) || 0), 0);
     },
+    plannedImpactAmount() {
+      return this.plannedList.reduce((total, item) => {
+        return this.isSavingsExpense(item) ? total : total + (Number(item.amount) || 0);
+      }, 0);
+    },
     weightedPlannedAmount() {
       return this.plannedList.reduce((acc, cur) => {
         const prob = (Number(cur.probability) || 100) / 100;
@@ -313,7 +318,7 @@ export default {
     },
     monthlyTotal() {
       return this.monthlyNeeds.reduce((total, item) => {
-        if (item.type !== 'expense') return total;
+        if (item.type !== 'expense' || this.isSavingsExpense(item)) return total;
         return total + Number(item.amount || 0) * Number(item.remaining_occurrences || 0);
       }, 0);
     },
@@ -335,11 +340,15 @@ export default {
       return this.availableAfterExpensesAndNeeds;
     },
     availableAfterExpensesAndNeeds() {
-      return Number(this.summary.total_income || 0) - Number(this.summary.total_expense || 0) - this.monthlyTotal;
+      const actualExpenses = this.transactions.reduce((total, item) => {
+        if (item.type !== 'expense' || this.isSavingsExpense(item)) return total;
+        return total + Number(item.amount || 0);
+      }, 0);
+      return Number(this.summary.total_income || 0) - actualExpenses - this.monthlyTotal;
     },
     totalSavingsAmount() {
       const accountBalances = Number(this.summary.sisa_tabungan || 0);
-      return accountBalances - this.monthlyTotal - this.totalPlannedAmount;
+      return accountBalances - this.monthlyTotal - this.plannedImpactAmount;
     },
     walletSpendingTotal() {
       return this.monthlyNeeds.reduce((total, item) => {
@@ -372,6 +381,13 @@ export default {
   methods: {
     formatRupiah,
     formatDate,
+    isSavingsExpense(item) {
+      if (item.savings_status === 'savings') return true;
+      const wallet = String(item.wallet || '').trim();
+      return Boolean(wallet) && this.savingsWallets.some(
+        savingsWallet => String(savingsWallet).trim() === wallet
+      );
+    },
     getCategories(type) {
       if (type === 'income') return this.incomeCategories;
       if (type === 'transfer') return ['Pindah Dana'];

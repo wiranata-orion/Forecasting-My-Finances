@@ -576,73 +576,117 @@ def update_wallet_initial_balance(wallet_id, amount):
     return updated
 
 def get_wallet_balances(start_date=None, end_date=None):
-    """Calculate account closing balances, optionally scoped to accounts active in a date range."""
+    """Calculate account closing balances and carry-over starting balances.
+
+    For every account:
+    - start_balance: balance prior to start_date (carry-over from earlier months + initial_balance).
+    - income: total inflows during period.
+    - expense: total outflows during period.
+    - balance: closing balance as of end_date (start_balance + income - expense).
+    """
     conn = get_connection()
     cursor = conn.cursor()
-    wallets = cursor.execute("SELECT id, name, initial_balance FROM wallets ORDER BY name").fetchall()
-    period_only = bool(start_date and end_date)
-    if period_only:
-        activity_rows = cursor.execute(
-            "SELECT wallet, transfer_to FROM transactions WHERE date >= ? AND date <= ?",
-            (start_date, end_date)
-        ).fetchall()
-        rows = cursor.execute(
-            "SELECT wallet, transfer_to, type, amount FROM transactions WHERE date <= ?",
+    wallet_rows = cursor.execute("SELECT id, name, initial_balance FROM wallets ORDER BY name").fetchall()
+
+    wallets = {row['name']: {'id': row['id'], 'initial_balance': float(row['initial_balance'] or 0)} for row in wallet_rows}
+
+    tx_wallets = cursor.execute("""
+        SELECT DISTINCT wallet FROM transactions WHERE wallet IS NOT NULL AND trim(wallet) != ''
+        UNION
+        SELECT DISTINCT transfer_to FROM transactions WHERE transfer_to IS NOT NULL AND trim(transfer_to) != ''
+    """).fetchall()
+    for row in tx_wallets:
+        w_name = (row[0] or '').strip()
+        if w_name and w_name not in wallets:
+            wallets[w_name] = {'id': f'w-{w_name}', 'initial_balance': 0.0}
+
+    if end_date:
+        all_txs = cursor.execute(
+            "SELECT date, wallet, transfer_to, type, amount FROM transactions WHERE date <= ? ORDER BY date ASC",
             (end_date,)
         ).fetchall()
-        balances = {
-            row['name']: {
-                'id': row['id'],
-                'balance': float(row['initial_balance'] or 0),
-                'initial_balance': float(row['initial_balance'] or 0)
-            }
-            for row in wallets
-        }
     else:
-        rows = cursor.execute("SELECT wallet, transfer_to, type, amount FROM transactions").fetchall()
-        activity_rows = rows
-        balances = {
-            row['name']: {
-                'id': row['id'],
-                'balance': float(row['initial_balance'] or 0),
-                'initial_balance': float(row['initial_balance'] or 0)
-            }
-            for row in wallets
-        }
+        all_txs = cursor.execute(
+            "SELECT date, wallet, transfer_to, type, amount FROM transactions ORDER BY date ASC"
+        ).fetchall()
     conn.close()
-    wallet_ids = {row['name']: row['id'] for row in wallets}
-    active_wallets = {
-        name.strip()
-        for row in activity_rows
-        for name in (row['wallet'], row['transfer_to'])
-        if name and name.strip()
+
+    balances = {
+        name: {
+            'id': info['id'],
+            'initial_balance': info['initial_balance'],
+            'start_balance': info['initial_balance'],
+            'income': 0.0,
+            'expense': 0.0,
+            'balance': info['initial_balance']
+        }
+        for name, info in wallets.items()
     }
 
-    def add_movement(wallet_name, amount):
-        name = (wallet_name or '').strip()
-        if not name:
-            return
-        if name not in balances:
-            balances[name] = {'id': wallet_ids.get(name), 'balance': 0.0, 'initial_balance': 0.0}
-        balances[name]['balance'] += amount
+    def ensure_wallet(w):
+        w_name = (w or '').strip()
+        if not w_name:
+            return None
+        if w_name not in balances:
+            balances[w_name] = {
+                'id': f'w-{w_name}',
+                'initial_balance': 0.0,
+                'start_balance': 0.0,
+                'income': 0.0,
+                'expense': 0.0,
+                'balance': 0.0
+            }
+        return w_name
 
-    for row in rows:
-        amount = float(row['amount'] or 0)
-        tx_type = str(row['type']).lower()
-        if tx_type == 'income':
-            add_movement(row['wallet'], amount)
+    for tx in all_txs:
+        tx_date = (tx['date'] or '')[:10]
+        amount = float(tx['amount'] or 0)
+        tx_type = str(tx['type'] or '').lower()
+        w_from = ensure_wallet(tx['wallet'])
+        w_to = ensure_wallet(tx['transfer_to'])
+
+        is_prior = bool(start_date and tx_date < start_date)
+        is_in_period = bool(not start_date or tx_date >= start_date)
+
+        if tx_type == 'income' or tx_type == 'transfer_in':
+            if w_from:
+                if is_prior:
+                    balances[w_from]['start_balance'] += amount
+                elif is_in_period:
+                    balances[w_from]['income'] += amount
+                balances[w_from]['balance'] += amount
         elif tx_type == 'expense':
-            add_movement(row['wallet'], -amount)
+            if w_from:
+                if is_prior:
+                    balances[w_from]['start_balance'] -= amount
+                elif is_in_period:
+                    balances[w_from]['expense'] += amount
+                balances[w_from]['balance'] -= amount
         elif tx_type == 'transfer':
-            add_movement(row['wallet'], -amount)
-            add_movement(row['transfer_to'], amount)
-        elif tx_type == 'transfer_in':
-            add_movement(row['wallet'], amount)
+            if w_from:
+                if is_prior:
+                    balances[w_from]['start_balance'] -= amount
+                elif is_in_period:
+                    balances[w_from]['expense'] += amount
+                balances[w_from]['balance'] -= amount
+            if w_to:
+                if is_prior:
+                    balances[w_to]['start_balance'] += amount
+                elif is_in_period:
+                    balances[w_to]['income'] += amount
+                balances[w_to]['balance'] += amount
 
-    result = [
-        {'wallet': name, **values}
-        for name, values in balances.items()
-        if (name in active_wallets if period_only else values['balance'] > 0)
-    ]
+    result = []
+    for name, vals in balances.items():
+        has_funds_or_activity = (
+            abs(vals['balance']) > 0.001 or
+            abs(vals['start_balance']) > 0.001 or
+            abs(vals['income']) > 0.001 or
+            abs(vals['expense']) > 0.001 or
+            name in wallets
+        )
+        if has_funds_or_activity:
+            result.append({'wallet': name, **vals})
+
     result.sort(key=lambda item: item['balance'], reverse=True)
     return result
