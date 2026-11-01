@@ -186,7 +186,20 @@
         @recalculate-forecast="handleRecalculateForecast"
       />
 
-      <!-- Section 5: Activity Log (Log Aktivitas Pengeluaran & Pemasukan) -->
+      <!-- Section 5: Savings accumulation simulator -->
+      <SavingsSimulation
+        v-if="!isAllTime"
+        :forecast-data="forecastData"
+        :summary="summary.current_month"
+        :active-savings="activeSavingsAmount"
+        :monthly-needs="monthlyNeeds"
+        :monthly-templates="monthlyTemplates"
+        :savings-wallets="savingsWallets"
+        :selected-year="selectedYear"
+        :selected-month="selectedMonth"
+      />
+
+      <!-- Section 6: Activity Log (Log Aktivitas Pengeluaran & Pemasukan) -->
       <ActivityLog
         :transactions="filteredTransactions"
         :month-label="isAllTime ? 'Seluruh History' : currentMonthLabel"
@@ -219,6 +232,7 @@ import DonutAnalytics from './DonutAnalytics.vue';
 import DailyBarAnalytics from './DailyBarAnalytics.vue';
 import PlannedExpenses from './PlannedExpenses.vue';
 import ForecastingView from './ForecastingView.vue';
+import SavingsSimulation from './SavingsSimulation.vue';
 import ActivityLog from './ActivityLog.vue';
 import AddTransactionModal from './AddTransactionModal.vue';
 import AddPlannedModal from './AddPlannedModal.vue';
@@ -313,6 +327,7 @@ export default {
     DailyBarAnalytics,
     PlannedExpenses,
     ForecastingView,
+    SavingsSimulation,
     ActivityLog,
     AddTransactionModal,
     AddPlannedModal
