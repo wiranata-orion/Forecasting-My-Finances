@@ -93,7 +93,7 @@
         </thead>
         <tbody>
           <tr
-            v-for="tx in filteredTransactions"
+            v-for="tx in paginatedTransactions"
             :key="tx.id"
             class="tx-row"
           >
@@ -161,6 +161,26 @@
         </tbody>
       </table>
     </div>
+
+    <nav
+      v-if="filteredTransactions.length > 0"
+      class="activity-pagination"
+      aria-label="Navigasi halaman log aktivitas"
+    >
+      <button
+        type="button"
+        class="activity-page-btn"
+        :disabled="currentPage === 1"
+        @click="currentPage -= 1"
+      >Sebelumnya</button>
+      <span>Halaman {{ currentPage }} dari {{ totalPages }}</span>
+      <button
+        type="button"
+        class="activity-page-btn"
+        :disabled="currentPage === totalPages"
+        @click="currentPage += 1"
+      >Berikutnya</button>
+    </nav>
   </div>
 </template>
 
@@ -179,7 +199,9 @@ export default {
   data() {
     return {
       searchQuery: '',
-      activeFilter: 'all' // 'all', 'income', 'expense'
+      activeFilter: 'all', // 'all', 'income', 'expense'
+      currentPage: 1,
+      pageSize: 10
     };
   },
   computed: {
@@ -207,6 +229,26 @@ export default {
       }
 
       return list;
+    },
+    totalPages() {
+      return Math.ceil(this.filteredTransactions.length / this.pageSize);
+    },
+    paginatedTransactions() {
+      const start = (this.currentPage - 1) * this.pageSize;
+      return this.filteredTransactions.slice(start, start + this.pageSize);
+    }
+  },
+  watch: {
+    searchQuery() {
+      this.currentPage = 1;
+    },
+    activeFilter() {
+      this.currentPage = 1;
+    },
+    transactions() {
+      if (this.currentPage > this.totalPages && this.totalPages > 0) {
+        this.currentPage = this.totalPages;
+      }
     }
   },
   methods: {
@@ -446,6 +488,36 @@ export default {
 
 .text-right {
   text-align: right;
+}
+
+.activity-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+.activity-page-btn {
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.activity-page-btn:hover:not(:disabled) {
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.activity-page-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .del-row-btn {

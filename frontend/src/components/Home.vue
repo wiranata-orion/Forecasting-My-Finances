@@ -172,6 +172,7 @@
         @edit-template="handleEditTemplate"
         @delete-template="handleDeleteTemplate"
         @apply-template="handleApplyTemplate"
+        @duplicate-template="handleDuplicateTemplate"
         :is-current-month="isViewingCurrentMonth"
       />
 
@@ -183,23 +184,15 @@
         :selected-month="selectedMonth"
         :is-past-month="!isViewingCurrentMonth"
         :is-all-time="isAllTime"
-        @recalculate-forecast="handleRecalculateForecast"
-      />
-
-      <!-- Section 5: Savings accumulation simulator -->
-      <SavingsSimulation
-        v-if="!isAllTime"
-        :forecast-data="forecastData"
-        :summary="summary.current_month"
-        :active-savings="activeSavingsAmount"
         :monthly-needs="monthlyNeeds"
         :monthly-templates="monthlyTemplates"
         :savings-wallets="savingsWallets"
-        :selected-year="selectedYear"
-        :selected-month="selectedMonth"
+        :active-savings="totalFinalSavings"
+        :summary="summary.current_month"
+        @recalculate-forecast="handleRecalculateForecast"
       />
 
-      <!-- Section 6: Activity Log (Log Aktivitas Pengeluaran & Pemasukan) -->
+      <!-- Section 5: Activity Log (Log Aktivitas Pengeluaran & Pemasukan) -->
       <ActivityLog
         :transactions="filteredTransactions"
         :month-label="isAllTime ? 'Seluruh History' : currentMonthLabel"
@@ -232,7 +225,6 @@ import DonutAnalytics from './DonutAnalytics.vue';
 import DailyBarAnalytics from './DailyBarAnalytics.vue';
 import PlannedExpenses from './PlannedExpenses.vue';
 import ForecastingView from './ForecastingView.vue';
-import SavingsSimulation from './SavingsSimulation.vue';
 import ActivityLog from './ActivityLog.vue';
 import AddTransactionModal from './AddTransactionModal.vue';
 import AddPlannedModal from './AddPlannedModal.vue';
@@ -327,7 +319,6 @@ export default {
     DailyBarAnalytics,
     PlannedExpenses,
     ForecastingView,
-    SavingsSimulation,
     ActivityLog,
     AddTransactionModal,
     AddPlannedModal
@@ -458,6 +449,17 @@ export default {
       return this.periodWalletBalances
         .filter(w => activeWallets.has(String(w.wallet || '').trim()))
         .reduce((total, w) => total + Number(w.balance || 0), 0);
+    },
+    totalFinalSavings() {
+      const accountBalances = Number(this.summary.current_month?.sisa_tabungan || 0);
+      const monthlyTotal = this.monthlyNeeds.reduce((total, item) => {
+        if (item.type !== 'expense' || this.isSavingsExpense(item)) return total;
+        return total + Number(item.amount || 0) * Number(item.remaining_occurrences || 0);
+      }, 0);
+      const plannedImpactAmount = this.filteredPlannedList.reduce((total, item) => {
+        return this.isSavingsExpense(item) ? total : total + (Number(item.amount) || 0);
+      }, 0);
+      return accountBalances - monthlyTotal - plannedImpactAmount;
     }
   },
   async mounted() {
@@ -476,6 +478,13 @@ export default {
     await this.refreshAllData();
   },
   methods: {
+    isSavingsExpense(item) {
+      if (item.savings_status === 'savings') return true;
+      const wallet = String(item.wallet || '').trim();
+      return Boolean(wallet) && this.savingsWallets.some(
+        savingsWallet => String(savingsWallet).trim() === wallet
+      );
+    },
     showToast(message, type = 'success') {
       if (this.toast.timer) clearTimeout(this.toast.timer);
       this.toast.message = message;
@@ -740,6 +749,22 @@ export default {
         this.monthlyTemplates = await fetchMonthlyTemplates();
       } catch (err) {
         this.showToast(err.message || 'Gagal menghapus template', 'error');
+      }
+    },
+
+    async handleDuplicateTemplate(id) {
+      try {
+        const template = this.monthlyTemplates.find(t => t.id === id);
+        if (!template) return;
+        const newName = `${template.name} (Copy)`;
+        await createMonthlyTemplate({
+          name: newName,
+          items: template.items.map(({ id, ...item }) => item)
+        });
+        this.showToast('Template diduplikat');
+        this.monthlyTemplates = await fetchMonthlyTemplates();
+      } catch (err) {
+        this.showToast(err.message || 'Gagal menduplikat template', 'error');
       }
     },
 

@@ -130,6 +130,15 @@ html, body {
   background: var(--bg-input);
   border-color: var(--border-light);
 }
+.btn-outline {
+  background: transparent;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+}
+.btn-outline:hover {
+  background: var(--primary);
+  color: #ffffff;
+}
 .btn-success {
   background: var(--income);
   color: #ffffff;

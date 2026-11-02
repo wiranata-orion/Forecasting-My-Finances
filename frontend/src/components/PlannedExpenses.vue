@@ -2,7 +2,7 @@
   <div class="fin-card planned-container" id="perencanaan">
 
     <div class="card-header">
-      <div>
+      <div class="header-left">
         <div class="title-with-badge">
           <h3 class="card-title">{{ activeMode === 'finance' ? 'Rencana Pengeluaran Bulan Ini' : showTemplateView ? 'Template Pengeluaran' : 'Kebutuhan Bulanan' }}</h3>
           <span class="badge badge-planned">{{ activeMode === 'finance' ? plannedList.length : showTemplateView ? monthlyTemplates.length : monthlyNeeds.length }} {{ activeMode === 'finance' ? 'Rencana' : showTemplateView ? 'Template' : 'Kebutuhan' }}</span>
@@ -12,26 +12,6 @@
         </p>
       </div>
 
-      <button v-if="activeMode === 'finance'" @click="$emit('open-add-planned')" class="btn btn-primary btn-sm">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <line x1="12" y1="5" x2="12" y2="19"/>
-          <line x1="5" y1="12" x2="19" y2="12"/>
-        </svg>
-        Tambah Kemungkinan
-      </button>
-      <div v-else-if="!showTemplateView" class="monthly-header-actions">
-        <button class="btn btn-secondary btn-sm" :disabled="!isCurrentMonth" @click="openMonthlyForm()">
-          <span aria-hidden="true">+</span> Tambah Kebutuhan Bulanan
-        </button>
-        <button class="btn btn-primary btn-sm" @click="showTemplateView = true">
-          Template
-        </button>
-      </div>
-      <div v-else class="monthly-header-actions">
-        <button class="btn btn-secondary btn-sm" @click="showTemplateView = false">Kebutuhan Bulanan</button>
-      </div>
-    </div>
-    <div class="card-header">
       <div class="view-toggles">
         <button
           class="toggle-btn"
@@ -47,6 +27,29 @@
         >
           Kebutuhan Bulanan
         </button>
+      </div>
+    </div>
+
+    <div class="card-header header-actions-row">
+      <div class="header-actions-buttons">
+        <button v-if="activeMode === 'finance'" @click="$emit('open-add-planned')" class="btn btn-primary btn-sm">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Tambah Kemungkinan
+        </button>
+        <div v-else-if="!showTemplateView" class="monthly-header-actions">
+          <button class="btn btn-secondary btn-sm" :disabled="!isCurrentMonth" @click="openMonthlyForm">
+            <span aria-hidden="true">+</span> Tambah Kebutuhan Bulanan
+          </button>
+          <button type="button" class="btn btn-primary btn-sm" @click="openTemplateView">
+            Template
+          </button>
+        </div>
+        <div v-else class="monthly-header-actions">
+          <button type="button" class="btn btn-secondary btn-sm" @click="closeTemplateView">Kebutuhan Bulanan</button>
+        </div>
       </div>
     </div>
 
@@ -167,23 +170,6 @@
       </div>
     </div>
 
-    <div v-if="activeMode === 'wallet' && showTemplateView" class="template-panel">
-      <div class="template-panel-header">
-        <div><strong>Template Reusable</strong><small>Simpan sekali, terapkan ke bulan aktif kapan saja.</small></div>
-        <div class="template-header-actions"><span class="badge badge-planned">{{ monthlyTemplates.length }} Template</span><button class="btn btn-primary btn-sm" @click="openTemplateForm()">+ Buat Template</button></div>
-      </div>
-      <div v-if="monthlyTemplates.length" class="template-grid">
-        <div v-for="item in monthlyTemplates" :key="item.id" class="template-card">
-          <div><strong>{{ item.name }}</strong><small>{{ item.items.length }} kebutuhan · {{ formatRupiah(templateTotal(item)) }}</small></div>
-          <div class="template-actions">
-            <button class="action-btn check-btn" :disabled="!isCurrentMonth" @click="$emit('apply-template', item.id)">Terapkan</button>
-            <button class="action-btn edit-btn" @click="openTemplateForm(item)">Edit</button>
-            <button class="action-btn del-btn" @click="$emit('delete-template', item.id)">Hapus</button>
-          </div>
-        </div>
-      </div>
-      <p v-else class="template-empty">Belum ada template reusable.</p>
-    </div>
 
     <div v-if="activeMode === 'wallet' && !showTemplateView && monthlyNeeds.length === 0" class="empty-state">
       <p class="empty-title">Belum ada template kebutuhan bulan ini</p>
@@ -209,53 +195,159 @@
       <div class="modal-dialog monthly-form">
         <div class="form-heading"><div><strong>{{ editingMonthly ? 'Edit Kebutuhan Bulanan' : 'Tambah Kebutuhan Bulanan' }}</strong><small>Data ini langsung masuk ke list bulan yang sedang berjalan.</small></div><button class="modal-close-btn" @click="closeMonthlyForm">×</button></div>
         <p v-if="formError" class="form-error">{{ formError }}</p>
-        <div class="monthly-type-toggle">
-          <button type="button" :class="{ active: monthlyForm.type === 'income' }" @click="setMonthlyType('income')">Pemasukan (+)</button>
-          <button type="button" :class="{ active: monthlyForm.type === 'expense' }" @click="setMonthlyType('expense')">Pengeluaran (-)</button>
-          <button type="button" :class="{ active: monthlyForm.type === 'transfer' }" @click="setMonthlyType('transfer')">Transfer</button>
-        </div>
         <div class="monthly-form-grid">
           <label>Nama Pengeluaran<input v-model.trim="monthlyForm.title" class="form-input" placeholder="Contoh: Makan siang" required></label>
-          <label>Harga Satuan<input v-model.number="monthlyForm.amount" class="form-input" type="number" min="1" placeholder="Contoh: 25000" required></label>
-          <label>Kategori<select v-model="monthlyForm.category" class="form-select"><option v-for="cat in getCategories(monthlyForm.type)" :key="cat" :value="cat">{{ cat }}</option></select></label>
+          <label>Harga Satuan<input :value="monthlyForm.amount" class="form-input" type="text" placeholder="Contoh: 25.000" required @input="formatRupiahInput($event, monthlyForm, 'amount')"></label>
+          <label>Kategori<select v-model="monthlyForm.category" class="form-select"><option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option></select></label>
           <label v-if="editingMonthly">Sisa Berapa Kali Terjadi<input v-model.number="monthlyForm.remaining_occurrences" class="form-input" type="number" min="0" :max="monthlyForm.total_occurrences" placeholder="Contoh: 5" required><small>Sudah dilakukan: {{ Number(monthlyForm.total_occurrences || 0) - Number(monthlyForm.remaining_occurrences || 0) }} kali</small></label>
           <label v-else>Berapa Kali Terjadi<input v-model.number="monthlyForm.total_occurrences" class="form-input" type="number" min="1" placeholder="Contoh: 20" required></label>
           <label v-if="editingMonthly">Total Awal<input :value="monthlyForm.total_occurrences" class="form-input" type="number" disabled><small>Total awal tidak berubah saat sisa diedit.</small></label>
           <label>Sumber / Rekening<input v-model.trim="monthlyForm.wallet" class="form-input" placeholder="Contoh: BCA, Cash, Dana"></label>
-          <label v-if="monthlyForm.type === 'transfer'">Rekening Tujuan<input v-model.trim="monthlyForm.transfer_to" class="form-input" placeholder="Contoh: Mandiri" required></label>
         </div>
         <div class="form-actions"><button class="btn btn-secondary" @click="closeMonthlyForm">Batal</button><button class="btn btn-primary" @click="submitMonthlyForm">Simpan Kebutuhan</button></div>
       </div>
     </div>
 
     <div v-if="showTemplateForm" class="modal-overlay">
-      <div class="modal-dialog monthly-form template-form">
-        <div class="form-heading"><div><strong>{{ editingTemplate ? 'Edit Template' : 'Buat Template' }}</strong><small>Satu template dapat berisi banyak kebutuhan dan tidak masuk bulan aktif sebelum diterapkan.</small></div><button class="modal-close-btn" @click="closeTemplateForm">×</button></div>
-        <label class="template-name-field">Nama Template<input v-model.trim="templateForm.name" class="form-input" placeholder="Contoh: Kebutuhan Rumah" required></label>
+      <div class="modal-dialog template-form wide-modal">
+        <div class="form-heading"><div><strong>{{ editingTemplate ? 'Edit Template' : 'Buat Template' }}</strong><small>{{ editingTemplate ? 'Perbarui item dan nama template yang sudah ada.' : 'Buat template baru dengan menambah item per kategori.' }}</small></div><button class="modal-close-btn" @click="closeTemplateForm">×</button></div>
+
+        <span class="template-name-label">Nama Template</span>
+        <input v-model.trim="templateForm.name" class="form-input" placeholder="Contoh: Kebutuhan Rumah" required>
         <p v-if="formError" class="form-error">{{ formError }}</p>
-        <div class="template-item-editor">
-          <div v-for="(item, index) in templateForm.items" :key="item.localId" class="template-item-row">
-            <div class="template-item-heading"><strong>Item {{ index + 1 }}</strong><button v-if="templateForm.items.length > 1" class="action-btn del-btn" @click="removeTemplateItem(index)">Hapus item</button></div>
-            <div class="template-item-grid">
-              <label class="template-field-wide">Nama kebutuhan<input v-model.trim="item.title" class="form-input" placeholder="Contoh: Makan siang" required></label>
-              <label>Jenis transaksi<select v-model="item.type" class="form-select" @change="syncTemplateCategory(item)"><option value="expense">Pengeluaran</option><option value="income">Pemasukan</option><option value="transfer">Transfer</option></select></label>
-              <label>Kategori<select v-model="item.category" class="form-select"><option v-for="cat in getCategories(item.type)" :key="cat" :value="cat">{{ cat }}</option></select></label>
-              <label>Harga Satuan<input v-model.number="item.amount" class="form-input" type="number" min="1" placeholder="Contoh: 25000" required></label>
-              <label>Berapa Kali Terjadi<input v-model.number="item.total_occurrences" class="form-input" type="number" min="1" placeholder="Contoh: 20" required></label>
-              <label class="template-field-wide">Sumber / Rekening<input v-model.trim="item.wallet" class="form-input" placeholder="Contoh: BCA, Cash, Dana"></label>
-              <label v-if="item.type === 'transfer'" class="template-field-wide">Rekening Tujuan<input v-model.trim="item.transfer_to" class="form-input" placeholder="Contoh: Mandiri" required></label>
+
+        <div class="template-summary">
+          <div class="summary-row">
+            <span>Total Item</span>
+            <strong>{{ templateForm.items.length }}</strong>
+          </div>
+          <div class="summary-row">
+            <span>Total Estimasi Pengeluaran</span>
+            <strong class="text-planned">{{ formatRupiah(templateTotalExpense) }}</strong>
+          </div>
+          <div class="summary-row">
+            <span>Estimasi Sisa Uang Bulan Ini</span>
+            <strong :class="templateRemainingEstimate >= 0 ? 'text-savings' : 'text-expense'">{{ formatRupiah(templateRemainingEstimate) }}</strong>
+          </div>
+        </div>
+
+        <div class="template-categories-layout">
+          <div class="template-sidebar">
+            <div class="sidebar-header">
+              <h4>Kategori</h4>
+              <span class="item-count">{{ totalTemplateItems }} item</span>
+            </div>
+            <div class="category-nav" v-for="cat in categories" :key="cat">
+              <button
+                type="button"
+                class="category-nav-btn"
+                :class="{ active: activeCategory === cat }"
+                @click="activeCategory = cat"
+              >
+                <span class="cat-name">{{ cat }}</span>
+                <span class="cat-count">{{ getCategoryItemCount(cat) }}</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="template-main-content">
+            <div class="panel-header">
+              <h4>{{ activeCategory }}</h4>
+              <span class="items-in-category">{{ getCategoryItems(activeCategory).length }} item</span>
+            </div>
+
+            <div class="category-items-panel">
+              <button type="button" class="add-item-inline-btn" @click="addCategoryItem">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="12" y1="5" x2="12" y2="19"/>
+                  <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                Tambah item ke {{ activeCategory }}
+              </button>
+
+              <div v-for="item in getCategoryItems(activeCategory)" :key="item.localId" class="template-item-card">
+                <div class="item-header">
+                  <span class="item-number">{{ getCategoryIndex(item) }}</span>
+                  <button type="button" class="item-delete-btn" @click="removeTemplateItem(templateForm.items.indexOf(item))" title="Hapus item">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="3 6 5 6 21 6"/>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                  </button>
+                </div>
+
+                <div class="item-fields-grid">
+                  <label class="field-wide">
+                    <span>Nama kebutuhan</span>
+                    <input v-model.trim="item.title" class="form-input" placeholder="Contoh: Makan siang" required>
+                  </label>
+
+                  <label>
+                    <span>Harga Satuan</span>
+                    <input :value="item.amount" class="form-input" type="text" placeholder="Contoh: 25.000" required @input="formatRupiahInput($event, item, 'amount')">
+                  </label>
+
+                  <label>
+                    <span>Berapa Kali</span>
+                    <input v-model.number="item.total_occurrences" class="form-input" type="number" min="1" placeholder="Contoh: 20" required>
+                  </label>
+
+                  <label class="field-wide">
+                    <span>Sumber / Rekening</span>
+                    <input v-model.trim="item.wallet" class="form-input" placeholder="Contoh: BCA, Cash, Dana">
+                  </label>
+
+                  <label v-if="item.type === 'transfer'" class="field-wide">
+                    <span>Rekening Tujuan</span>
+                    <input v-model.trim="item.transfer_to" class="form-input" placeholder="Contoh: Mandiri" required>
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-        <button class="btn btn-secondary add-item-btn" @click="addTemplateItem">+ Tambah Item</button>
-        <div class="form-actions"><button class="btn btn-secondary" @click="closeTemplateForm">Batal</button><button class="btn btn-primary" @click="submitTemplateForm">Simpan Template</button></div>
+
+        <div class="form-actions"><button class="btn btn-secondary" @click="closeTemplateForm">Batal</button><button class="btn btn-primary" @click="submitTemplateForm">{{ editingTemplate ? 'Perbarui Template' : 'Simpan Template' }}</button></div>
       </div>
+    </div>
+  </div>
+
+  <div v-if="showTemplateListModal" class="modal-overlay">
+    <div class="modal-dialog template-form wide-modal template-list-modal">
+      <div class="form-heading"><div><strong>Template Reusable</strong><small>Simpan sekali, terapkan ke bulan aktif kapan saja. Total Pemasukan bulan ini: <strong class="text-income">{{ formatRupiah(summary.total_income) }}</strong></small></div><button class="modal-close-btn" @click="closeTemplateView">×</button></div>
+
+      <div class="template-header-actions">
+        <span class="badge badge-planned">{{ monthlyTemplates.length }} Template</span>
+        <button class="btn btn-primary btn-sm" @click="openTemplateForm()">+ Buat Template</button>
+      </div>
+
+      <div v-if="monthlyTemplates.length" class="template-grid">
+        <div v-for="item in monthlyTemplates" :key="item.id" class="template-card">
+          <div class="template-card-content">
+            <strong class="template-card-title">{{ item.name }}</strong>
+            <small class="template-card-meta">{{ item.items.length }} kebutuhan · {{ formatRupiah(templateTotal(item)) }}</small>
+            <div class="template-card-estimate">
+              <span class="est-label">Est. Sisa Uang:</span>
+              <strong class="est-val" :class="templateRemaining(item) >= 0 ? 'text-savings' : 'text-expense'">
+                {{ formatRupiah(templateRemaining(item)) }}
+              </strong>
+            </div>
+          </div>
+          <div class="template-actions">
+            <button class="action-btn check-btn" :disabled="!isCurrentMonth" @click="$emit('apply-template', item.id)">Terapkan</button>
+            <button class="action-btn edit-btn" @click="openTemplateForm(item)">Edit</button>
+            <button class="action-btn edit-btn" @click="$emit('duplicate-template', item.id)" title="Duplikat template">Duplikat</button>
+            <button class="action-btn del-btn" @click="$emit('delete-template', item.id)">Hapus</button>
+          </div>
+        </div>
+      </div>
+      <p v-else class="template-empty">Belum ada template reusable.</p>
     </div>
   </div>
 </template>
 
 <script>
-import { formatRupiah, formatDate } from '../utils/formatters.js';
+import { formatRupiah, formatDate, formatRupiahInput } from '../utils/formatters.js';
 
 export default {
   name: 'PlannedExpenses',
@@ -289,19 +381,36 @@ export default {
       default: true
     }
   },
-  emits: ['open-add-planned', 'edit-planned', 'delete-planned', 'realize-planned', 'create-monthly', 'edit-monthly', 'delete-monthly', 'realize-monthly', 'create-template', 'edit-template', 'delete-template', 'apply-template'],
+  emits: ['open-add-planned', 'edit-planned', 'delete-planned', 'realize-planned', 'create-monthly', 'edit-monthly', 'delete-monthly', 'realize-monthly', 'create-template', 'edit-template', 'delete-template', 'apply-template', 'duplicate-template'],
   data() {
     return {
-      activeMode: 'finance', showMonthlyForm: false, showTemplateForm: false, editingMonthly: null, editingTemplate: null, quantities: {},
+      activeMode: 'finance', showMonthlyForm: false, showTemplateForm: false, showTemplateListModal: false, editingMonthly: null, editingTemplate: null, quantities: {},
+      activeCategory: 'Makanan & Kebutuhan',
       categories: ['Makanan & Kebutuhan', 'Transportasi', 'Tagihan & Utilitas', 'Hiburan & Gaya Hidup', 'Belanja Online', 'Kesehatan', 'Pendidikan', 'Lain-lain'],
       incomeCategories: ['Gaji & Upah'],
-      monthlyForm: { title: '', amount: null, category: 'Makanan & Kebutuhan', total_occurrences: 1, remaining_occurrences: 1, type: 'expense', wallet: '', transfer_to: '' },
+      monthlyForm: { title: '', amount: '', category: 'Makanan & Kebutuhan', total_occurrences: 1, remaining_occurrences: 1, type: 'expense', wallet: '' },
       showTemplateView: false,
       formError: '',
-      templateForm: { name: '', items: [{ localId: 'initial-item', title: '', amount: null, category: 'Makanan & Kebutuhan', total_occurrences: 1, type: 'expense', wallet: '', transfer_to: '' }] }
+      templateForm: { name: '', items: [] }
     };
   },
   computed: {
+    totalTemplateItems() {
+      return this.templateForm.items.length;
+    },
+    templateTotalExpense() {
+      return this.templateForm.items
+        .filter(item => item.type === 'expense')
+        .reduce((total, item) => total + (typeof item.amount === 'string' ? Number(item.amount.replace(/[^\d]/g, '')) : Number(item.amount || 0)) * Number(item.total_occurrences || 0), 0);
+    },
+    templateTotalIncome() {
+      return this.templateForm.items
+        .filter(item => item.type === 'income')
+        .reduce((total, item) => total + (typeof item.amount === 'string' ? Number(item.amount.replace(/[^\d]/g, '')) : Number(item.amount || 0)) * Number(item.total_occurrences || 0), 0);
+    },
+    templateRemainingEstimate() {
+      return Number(this.summary.total_income || 0) - this.templateTotalExpense;
+    },
     totalPlannedAmount() {
       return this.plannedList.reduce((acc, cur) => acc + (Number(cur.amount) || 0), 0);
     },
@@ -381,6 +490,7 @@ export default {
   methods: {
     formatRupiah,
     formatDate,
+    formatRupiahInput,
     isSavingsExpense(item) {
       if (item.savings_status === 'savings') return true;
       const wallet = String(item.wallet || '').trim();
@@ -393,16 +503,12 @@ export default {
       if (type === 'transfer') return ['Pindah Dana'];
       return this.categories;
     },
-    setMonthlyType(type) {
-      this.monthlyForm.type = type;
-      this.monthlyForm.category = this.getCategories(type)[0];
-    },
     syncTemplateCategory(item) {
       const validCategories = this.getCategories(item.type);
       if (!validCategories.includes(item.category)) item.category = validCategories[0];
     },
     newTemplateItem() {
-      return { localId: `item-${Date.now()}-${Math.random()}`, title: '', amount: null, category: this.categories[0], total_occurrences: 1, type: 'expense', wallet: '', transfer_to: '' };
+      return { localId: `item-${Date.now()}-${Math.random()}`, title: '', amount: '', category: this.categories[0], total_occurrences: 1, type: 'expense', wallet: '', transfer_to: '' };
     },
     formatTypeLabel(type) {
       if (type === 'income') return 'Pemasukan';
@@ -410,7 +516,35 @@ export default {
       return 'Pengeluaran';
     },
     templateTotal(template) {
-      return (template.items || []).reduce((total, item) => total + Number(item.amount || 0) * Number(item.total_occurrences || 0), 0);
+      return (template.items || []).reduce((total, item) => {
+        if (item.type && item.type !== 'expense') return total;
+        return total + Number(item.amount || 0) * Number(item.total_occurrences || 0);
+      }, 0);
+    },
+    calculateTemplateIncome(template) {
+      return (template.items || []).reduce((total, item) => {
+        if (item.type === 'income') return total + Number(item.amount || 0) * Number(item.total_occurrences || 0);
+        return total;
+      }, 0);
+    },
+    templateRemaining(template) {
+      const totalIncome = Number(this.summary?.total_income || 0);
+      return totalIncome + this.calculateTemplateIncome(template) - this.templateTotal(template);
+    },
+    getCategoryItems(category) {
+      return this.templateForm.items.filter(item => item.category === category);
+    },
+    getCategoryItemCount(category) {
+      return this.getCategoryItems(category).length;
+    },
+    getCategoryIndex(item) {
+      const categoryItems = this.getCategoryItems(item.category);
+      return categoryItems.indexOf(item) + 1;
+    },
+    addCategoryItem() {
+      const newItem = this.newTemplateItem();
+      newItem.category = this.activeCategory;
+      this.templateForm.items.push(newItem);
     },
     getProbClass(prob) {
       if (prob >= 90) return 'prob-high';
@@ -421,14 +555,29 @@ export default {
       this.activeMode = mode;
       if (mode === 'finance') this.closeMonthlyForm();
     },
+    openTemplateView() {
+      this.closeMonthlyForm();
+      this.showTemplateListModal = true;
+    },
+    closeTemplateView() {
+      this.closeTemplateForm();
+      this.showTemplateListModal = false;
+    },
     openMonthlyForm(item = null) {
       this.closeTemplateForm();
+      this.closeTemplateView();
       this.formError = '';
       this.editingMonthly = item;
-      this.monthlyForm = item ? { type: 'expense', wallet: '', transfer_to: '', ...item } : { title: '', amount: null, category: this.categories[0], total_occurrences: 1, remaining_occurrences: 1, type: 'expense', wallet: '', transfer_to: '' };
-      this.monthlyForm.category = this.getCategories(this.monthlyForm.type).includes(this.monthlyForm.category)
+      const base = item
+        ? { type: 'expense', wallet: '', ...item }
+        : { title: '', amount: '', category: this.categories[0], total_occurrences: 1, remaining_occurrences: 1, type: 'expense', wallet: '' };
+      this.monthlyForm = { ...base, type: 'expense' };
+      if (item && base.amount != null && base.amount !== '') {
+        this.monthlyForm.amount = new Intl.NumberFormat('id-ID').format(Number(base.amount));
+      }
+      this.monthlyForm.category = this.categories.includes(this.monthlyForm.category)
         ? this.monthlyForm.category
-        : this.getCategories(this.monthlyForm.type)[0];
+        : this.categories[0];
       this.showMonthlyForm = true;
     },
     closeMonthlyForm() {
@@ -437,32 +586,52 @@ export default {
     },
     openTemplateForm(item = null) {
       this.closeMonthlyForm();
+      this.closeTemplateView();
       this.formError = '';
       this.editingTemplate = item;
+      this.activeCategory = 'Makanan & Kebutuhan';
       this.templateForm = item
-        ? { name: item.name, items: item.items.map(templateItem => ({ type: 'expense', wallet: '', transfer_to: '', ...templateItem, localId: templateItem.id })) }
-        : { name: '', items: [this.newTemplateItem()] };
+        ? { name: item.name, items: item.items.map(templateItem => {
+            const t = { type: 'expense', wallet: '', transfer_to: '', ...templateItem, localId: templateItem.id };
+            if (t.amount != null && t.amount !== '') {
+              t.amount = new Intl.NumberFormat('id-ID').format(Number(t.amount));
+            }
+            return t;
+          }) }
+        : { name: '', items: [] };
       this.templateForm.items.forEach(templateItem => this.syncTemplateCategory(templateItem));
       this.showTemplateForm = true;
     },
     closeTemplateForm() {
       this.showTemplateForm = false;
       this.editingTemplate = null;
+      // Reopen template list modal if it was open
+      if (!this.showTemplateListModal) {
+        this.showTemplateListModal = true;
+      }
     },
     submitMonthlyForm() {
       const remaining = Number(this.monthlyForm.remaining_occurrences);
       const total = Number(this.monthlyForm.total_occurrences);
-      if (!this.monthlyForm.title || Number(this.monthlyForm.amount) <= 0 || total <= 0 || (this.editingMonthly && (remaining < 0 || remaining > total))) {
+      const amountValue = typeof this.monthlyForm.amount === 'string'
+        ? Number(this.monthlyForm.amount.replace(/[^\d]/g, ''))
+        : Number(this.monthlyForm.amount);
+      if (!this.monthlyForm.title || amountValue <= 0 || total <= 0 || (this.editingMonthly && (remaining < 0 || remaining > total))) {
         this.formError = 'Nama, harga, dan jumlah transaksi wajib valid.';
         return;
       }
       if (!this.validateTransactionFields(this.monthlyForm)) return;
-      const payload = { ...this.monthlyForm, remaining_occurrences: this.editingMonthly ? this.monthlyForm.remaining_occurrences : this.monthlyForm.total_occurrences };
+      const payload = { ...this.monthlyForm, amount: amountValue, remaining_occurrences: this.editingMonthly ? this.monthlyForm.remaining_occurrences : this.monthlyForm.total_occurrences };
       this.$emit(this.editingMonthly ? 'edit-monthly' : 'create-monthly', payload);
       this.closeMonthlyForm();
     },
     submitTemplateForm() {
-      const validItems = this.templateForm.items.every(item => item.title && Number(item.amount) > 0 && Number(item.total_occurrences) > 0);
+      const validItems = this.templateForm.items.every(item => {
+        const amountVal = typeof item.amount === 'string'
+          ? Number(item.amount.replace(/[^\d]/g, ''))
+          : Number(item.amount);
+        return item.title && amountVal > 0 && Number(item.total_occurrences) > 0;
+      });
       if (!this.templateForm.name || !validItems) {
         this.formError = 'Nama template, nama kebutuhan, harga, dan jumlah transaksi wajib diisi.';
         return;
@@ -470,7 +639,12 @@ export default {
       if (!this.templateForm.items.every(item => this.validateTransactionFields(item))) return;
       this.$emit(this.editingTemplate ? 'edit-template' : 'create-template', {
         name: this.templateForm.name,
-        items: this.templateForm.items.map(({ localId, ...item }) => item),
+        items: this.templateForm.items.map(({ localId, ...item }) => ({
+          ...item,
+          amount: typeof item.amount === 'string'
+            ? Number(item.amount.replace(/[^\d]/g, ''))
+            : Number(item.amount)
+        })),
         ...(this.editingTemplate ? { id: this.editingTemplate.id } : {})
       });
       this.closeTemplateForm();
@@ -624,6 +798,12 @@ export default {
   border-radius: inherit;
 }
 
+.wallet-chart-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
 .wallet-chart-row small {
   display: block;
   color: var(--text-dim);
@@ -645,6 +825,9 @@ export default {
 }
 .text-income {
   color: var(--income-text);
+}
+.text-expense {
+  color: var(--expense-text, #f43f5e);
 }
 
 .empty-state {
@@ -857,6 +1040,59 @@ export default {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+  animation: fadeIn 0.2s ease;
+}
+
+.template-form {
+  transform: translateY(-2rem);
+}
+
+.modal-dialog {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+  animation: slideUp 0.25s ease;
+}
+
+.wide-modal {
+  max-width: 1000px;
+}
+
+.form-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.form-heading strong {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.form-heading small {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
 .modal-close-btn {
   background: transparent;
   border: none;
@@ -864,10 +1100,66 @@ export default {
   font-size: 1.5rem;
   cursor: pointer;
   line-height: 1;
+  padding: 0.25rem;
+  border-radius: 6px;
+  transition: all 0.15s ease;
 }
 
 .modal-close-btn:hover {
   color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.form-error {
+  margin: 0.75rem 1.25rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  border-radius: 8px;
+  background: rgba(244, 63, 94, 0.1);
+  color: var(--expense-text);
+  font-size: 0.78rem;
+}
+
+.monthly-form,
+.template-form {
+  padding: 1.25rem;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.header-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.view-toggles {
+  display: flex;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-color);
+  padding: 0.2rem;
+  border-radius: 10px;
+  gap: 0;
+}
+
+.header-actions-row {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.header-actions-buttons {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .monthly-header-actions,
@@ -932,6 +1224,41 @@ export default {
   padding: 0.75rem;
 }
 
+.template-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.template-card-title {
+  color: #ffffff;
+  font-size: 0.95rem;
+}
+
+.template-card-meta {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+
+.template-card-estimate {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  flex-wrap: wrap;
+}
+
+.template-card-estimate .est-label {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.template-card-estimate .est-val {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .template-empty {
   color: var(--text-dim);
   font-size: 0.8rem;
@@ -972,13 +1299,14 @@ export default {
   gap: 1rem;
 }
 
-.template-name-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+.template-name-label {
+  display: block;
   color: var(--text-muted);
   font-size: 0.75rem;
   font-weight: 600;
+  margin-top: 0.5rem;
+  margin-bottom: 0.35rem;
+  padding-left: 1.25rem;
 }
 
 .template-item-editor {
@@ -1013,8 +1341,7 @@ export default {
   gap: 0.75rem;
 }
 
-.template-item-grid label,
-.template-name-field {
+.template-item-grid label {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -1073,6 +1400,9 @@ export default {
 
 .form-actions {
   justify-content: flex-end;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
 }
 
 .form-error {
@@ -1109,6 +1439,411 @@ export default {
   }
   .template-field-wide {
     grid-column: auto;
+  }
+}
+
+/* Wide Modal for Template Form */
+.wide-modal {
+  max-width: 1000px;
+  width: 95vw;
+}
+
+/* Template List Modal */
+.template-list-modal {
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.template-list-modal .form-heading {
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.template-list-modal .template-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.template-list-modal .template-grid {
+  padding: 0 1.25rem 1.25rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.template-list-modal .template-card {
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  padding: 0.75rem;
+}
+
+.template-list-modal .template-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.template-list-modal .template-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+/* Template Categories Layout */
+.template-categories-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 1.5rem;
+  margin-top: 1rem;
+  min-height: 500px;
+}
+
+.template-sidebar {
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: fit-content;
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-header h4 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.item-count {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  background: rgba(255,255,255,0.05);
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+
+.category-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1;
+}
+
+.category-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.65rem 0.75rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.category-nav-btn:hover {
+  background: rgba(255,255,255,0.05);
+  border-color: var(--border-color);
+  color: var(--text-main);
+}
+
+.category-nav-btn.active {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: rgba(99, 102, 241, 0.3);
+  color: #a5b4fc;
+}
+
+.cat-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cat-count {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  background: rgba(255,255,255,0.05);
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+}
+
+.template-main-content {
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1.25rem;
+  min-height: 500px;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 100px;
+}
+
+.empty-template-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  color: var(--text-dim);
+  text-align: left;
+  padding: 2rem;
+  width: 100%;
+}
+
+.empty-template-state svg {
+  color: var(--text-dim);
+}
+
+.empty-template-state p {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.empty-template-state small {
+  font-size: 0.75rem;
+}
+
+.category-items-panel {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.category-items-panel .empty-template-state {
+  grid-column: 1 / -1;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.panel-header h4 {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.items-in-category {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  background: rgba(255,255,255,0.05);
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.template-item-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 280px;
+  box-sizing: border-box;
+}
+
+.item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.item-number {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  background: rgba(255,255,255,0.05);
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.item-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.item-delete-btn:hover {
+  background: rgba(244, 63, 94, 0.15);
+  color: var(--expense-text);
+}
+
+.item-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.6rem;
+  flex: 1;
+}
+
+.item-fields-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.item-fields-grid label.field-wide {
+  grid-column: 1 / -1;
+}
+
+.item-fields-grid input,
+.item-fields-grid select {
+  padding: 0.45rem 0.6rem;
+  font-size: 0.78rem;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.add-item-inline-btn {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0;
+  padding: 0.7rem 1.5rem;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px dashed rgba(56, 189, 248, 0.3);
+  border-radius: 8px;
+  color: #38bdf8;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.add-item-inline-btn:hover {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+/* Template Summary */
+.template-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  margin-top: 1rem;
+}
+
+.summary-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  text-align: center;
+}
+
+.summary-row span {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.summary-row strong {
+  font-size: 0.95rem;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .category-items-panel {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 1200px) {
+  .category-items-panel {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .item-fields-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .template-categories-layout {
+    grid-template-columns: 1fr;
+  }
+  .template-sidebar {
+    max-height: 200px;
+    order: 2;
+  }
+  .template-main-content {
+    order: 1;
+  }
+  .item-fields-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .item-fields-grid label.field-wide {
+    grid-column: 1 / -1;
+  }
+  .template-summary {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .category-items-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .item-fields-grid {
+    grid-template-columns: 1fr;
+  }
+  .template-summary {
+    grid-template-columns: 1fr;
   }
 }
 </style>

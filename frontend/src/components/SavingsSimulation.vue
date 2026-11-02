@@ -37,7 +37,7 @@
           aria-label="Saldo tabungan awal"
           @input="handleMoneyInput('openingSavingsInput', $event)"
         >
-        <small>Nilai awal yang dipakai untuk menghitung akumulasi.</small>
+        <small>Otomatis dari Total Tabungan Akhir (bisa diedit).</small>
       </label>
       <label class="simulation-field">
         <span>Pemasukan per bulan</span>
@@ -56,7 +56,7 @@
         <select v-model="templateId" class="form-select" :disabled="!templateOptions.length" aria-label="Pilih template kebutuhan">
           <option value="">Pilih template kebutuhan</option>
           <option v-for="template in templateOptions" :key="template.value" :value="template.value">
-            {{ template.label }} · {{ formatRupiah(template.amount) }}/bln
+            {{ template.label }} · {{ formatRupiah(template.amount) }}/bln (Est. sisa: {{ formatRupiah(template.remaining) }})
           </option>
         </select>
         <small>Template yang dipilih akan digunakan berulang setiap bulan dalam simulasi.</small>
@@ -185,21 +185,29 @@ export default {
       return this.targetMonth;
     },
     openingSavingsAmount() {
-      if (this.openingSavingsInput !== null) return Math.max(0, Number(this.openingSavingsInput) || 0);
-      return Math.max(0, Number(this.activeSavings) || 0);
+      if (this.openingSavingsInput !== null) return Number(this.openingSavingsInput) || 0;
+      return Number(this.activeSavings) || 0;
     },
     monthlyIncomeAmount() {
       if (this.monthlyIncomeInput !== null) return Math.max(0, Number(this.monthlyIncomeInput) || 0);
-      return 2250000;
+      return Number(this.summary?.total_income) || 2250000;
     },
     baseExpenseAmount() {
       return 0;
     },
     templateOptions() {
       const options = [];
+      const income = this.monthlyIncomeAmount;
       this.monthlyTemplates.forEach(template => {
         const amount = this.expenseItemsTotal(template.items || [], false);
-        if (amount > 0) options.push({ value: `template-${template.id}`, label: template.name, amount });
+        if (amount > 0) {
+          options.push({
+            value: `template-${template.id}`,
+            label: template.name,
+            amount,
+            remaining: income - amount
+          });
+        }
       });
       return options;
     },
@@ -252,6 +260,12 @@ export default {
     },
     templateOptions(options) {
       if (this.templateId && !options.some(item => item.value === this.templateId)) this.templateId = '';
+    },
+    selectedMonth() {
+      this.openingSavingsInput = null;
+    },
+    selectedYear() {
+      this.openingSavingsInput = null;
     }
   },
   methods: {

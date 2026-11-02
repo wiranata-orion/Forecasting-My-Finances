@@ -1,29 +1,72 @@
 <template>
   <div class="fin-card forecast-container" id="forcasting">
-    <!-- Header with AI Badge & Single Log Input -->
+    <!-- Header - Dynamic based on active tab -->
     <div class="forecast-header">
-      <div>
-        <div class="header-tag-row">
-          <span class="python-badge">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <path d="M12 2a10 10 0 0 0-10 10c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.1-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/>
-            </svg>
-            Python ML Model (Scikit-Learn)
-          </span>
-          <span class="target-month-badge">
-            Siklus Proyeksi: {{ forecastData?.meta?.next_month_name || 'Bulan Ini' }} {{ forecastData?.meta?.next_year || '' }}
-          </span>
-          <span v-if="isPastMonth" class="history-mode-pill">
-            Mode History Lampau
-          </span>
+      <div class="header-left">
+        <!-- Forecast Tab Header -->
+        <div v-if="activeTab === 'forecast'" class="header-content">
+          <div class="header-tag-row">
+            <span class="python-badge">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <path d="M12 2a10 10 0 0 0-10 10c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.1-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/>
+              </svg>
+              Python ML Model (Scikit-Learn)
+            </span>
+            <span class="target-month-badge">
+              Siklus Proyeksi: {{ forecastData?.meta?.next_month_name || 'Bulan Ini' }} {{ forecastData?.meta?.next_year || '' }}
+            </span>
+            <span v-if="isPastMonth" class="history-mode-pill">
+              Mode History Lampau
+            </span>
+          </div>
+          <h3 class="forecast-title">{{ isAllTime ? 'Analisis & Forecasting Seluruh History' : 'Forecasting Pengeluaran & Tabungan Bulan Terpilih' }}</h3>
+          <p class="forecast-desc">
+            Model regresi linier & analisis deret waktu di backend Python memproyeksikan estimasi pengeluaran dan jumlah sisa tabungan berdasarkan pola historis.
+          </p>
         </div>
-        <h3 class="forecast-title">{{ isAllTime ? 'Analisis & Forecasting Seluruh History' : 'Forecasting Pengeluaran & Tabungan Bulan Terpilih' }}</h3>
-        <p class="forecast-desc">
-          Model regresi linier & analisis deret waktu di backend Python memproyeksikan estimasi pengeluaran dan jumlah sisa tabungan berdasarkan pola historis.
-        </p>
+
+        <!-- Simulation Tab Header -->
+        <div v-else class="header-content">
+          <div class="header-tag-row">
+            <span class="simulation-badge">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+                <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>
+              </svg>
+              Simulasi Tabungan
+            </span>
+          </div>
+          <h3 class="forecast-title">Simulasi Perencanaan Tabungan</h3>
+          <p class="forecast-desc">
+            Hitung perkiraan tabungan sampai bulan target berdasarkan template kebutuhan bulanan dan pengeluaran satu kali.
+          </p>
+        </div>
+      </div>
+
+      <!-- Segmented Button at Top Right -->
+      <div v-if="!isAllTime && !isPastMonth" class="segmented-button" role="group" aria-label="Pilih tampilan forecasting">
+        <button
+          type="button"
+          :class="['segment-btn', { active: activeTab === 'forecast' }]"
+          @click="activeTab = 'forecast'"
+          :aria-pressed="activeTab === 'forecast'"
+        >
+          Forecasting
+        </button>
+        <button
+          type="button"
+          v-if="!isPastMonth"
+          :class="['segment-btn', { active: activeTab === 'simulation' }]"
+          @click="activeTab = 'simulation'"
+          :aria-pressed="activeTab === 'simulation'"
+        >
+          Simulasi
+        </button>
       </div>
 
     </div>
+
+    <!-- Tab Panels -->
+    <div role="tabpanel" id="forecast-panel" aria-labelledby="forecast-tab" v-show="activeTab === 'forecast'">
 
     <!-- 4 Forecast Metric Cards -->
     <div class="forecast-cards-grid">
@@ -311,7 +354,7 @@
       <!-- Historical Monthly Timeline Cards -->
       <div v-if="historicalSeries.length > 0" class="history-cards-scroll">
         <div
-          v-for="h in historicalSeries"
+          v-for="h in paginatedHistoricalSeries"
           :key="h.ym"
           class="history-month-card"
           :class="{ 'current-month-card': h.is_current }"
@@ -341,7 +384,23 @@
         </div>
       </div>
 
-      <div v-else class="empty-history-box">
+      <div v-if="historicalPageCount > 1" class="history-pagination">
+        <button
+          type="button"
+          class="history-page-btn"
+          :disabled="historicalPage === 1"
+          @click="historicalPage -= 1"
+        >Sebelumnya</button>
+        <span>Halaman {{ historicalPage }} dari {{ historicalPageCount }}</span>
+        <button
+          type="button"
+          class="history-page-btn"
+          :disabled="historicalPage === historicalPageCount"
+          @click="historicalPage += 1"
+        >Berikutnya</button>
+      </div>
+
+      <div v-else-if="historicalSeries.length === 0" class="empty-history-box">
         <p>Belum ada rekaman bulan-bulan sebelumnya. Tambahkan transaksi untuk memperkaya basis analisa regresi deret waktu.</p>
       </div>
     </div>
@@ -366,7 +425,7 @@
 
         <div class="cat-bars-list">
           <div
-            v-for="cat in nextMonthData.category_breakdown || []"
+            v-for="cat in paginatedCategories"
             :key="cat.category"
             class="cat-bar-item"
           >
@@ -385,6 +444,26 @@
             </div>
           </div>
         </div>
+
+        <nav
+          v-if="projectedCategories.length > 0"
+          class="category-pagination"
+          aria-label="Navigasi halaman proyeksi kategori"
+        >
+          <button
+            type="button"
+            class="category-page-btn"
+            :disabled="categoryPage === 1"
+            @click="categoryPage -= 1"
+          >Sebelumnya</button>
+          <span>Halaman {{ categoryPage }} dari {{ categoryPageCount }}</span>
+          <button
+            type="button"
+            class="category-page-btn"
+            :disabled="categoryPage === categoryPageCount"
+            @click="categoryPage += 1"
+          >Berikutnya</button>
+        </nav>
       </div>
 
       <!-- Python Insights & Advice -->
@@ -426,14 +505,34 @@
         </div>
       </div>
     </div>
+
+    </div>
+
+    <!-- Simulation Tab Panel -->
+    <div role="tabpanel" id="simulation-panel" aria-labelledby="simulation-tab" v-show="activeTab === 'simulation' && !isPastMonth">
+      <SavingsSimulation
+        :forecast-data="forecastData"
+        :summary="summary"
+        :active-savings="activeSavings"
+        :monthly-needs="monthlyNeeds"
+        :monthly-templates="monthlyTemplates"
+        :savings-wallets="savingsWallets"
+        :selected-year="selectedYear"
+        :selected-month="selectedMonth"
+      />
+    </div>
   </div>
 </template>
 
 <script>
 import { formatRupiah } from '../utils/formatters.js';
+import SavingsSimulation from './SavingsSimulation.vue';
 
 export default {
   name: 'ForecastingView',
+  components: {
+    SavingsSimulation
+  },
   props: {
     forecastData: {
       type: Object,
@@ -458,7 +557,37 @@ export default {
     isAllTime: {
       type: Boolean,
       default: false
+    },
+    // New props for SavingsSimulation
+    monthlyNeeds: {
+      type: Array,
+      default: () => []
+    },
+    monthlyTemplates: {
+      type: Array,
+      default: () => []
+    },
+    savingsWallets: {
+      type: Array,
+      default: () => []
+    },
+    activeSavings: {
+      type: Number,
+      default: 0
+    },
+    summary: {
+      type: Object,
+      default: () => ({})
     }
+  },
+  data() {
+    return {
+      activeTab: 'forecast',
+      historicalPage: 1,
+      historicalPageSize: 6,
+      categoryPage: 1,
+      categoryPageSize: 10
+    };
   },
   computed: {
     nextMonthData() {
@@ -476,6 +605,13 @@ export default {
     projectedCategoryTotal() {
       return this.projectedCategories.reduce((total, item) => total + Number(item.projected_amount || 0), 0);
     },
+    categoryPageCount() {
+      return Math.ceil(this.projectedCategories.length / this.categoryPageSize);
+    },
+    paginatedCategories() {
+      const start = (this.categoryPage - 1) * this.categoryPageSize;
+      return this.projectedCategories.slice(start, start + this.categoryPageSize);
+    },
     categoryDonutStyle() {
       const total = this.projectedCategories.reduce((sum, item) => sum + Number(item.projected_amount || 0), 0);
       if (!total) return { background: '#334155' };
@@ -491,6 +627,13 @@ export default {
     historicalSeries() {
       return this.historicalData?.historical_series || [];
     },
+    historicalPageCount() {
+      return Math.ceil(this.historicalSeries.length / this.historicalPageSize);
+    },
+    paginatedHistoricalSeries() {
+      const start = (this.historicalPage - 1) * this.historicalPageSize;
+      return this.historicalSeries.slice(start, start + this.historicalPageSize);
+    },
     accuracyData() {
       return this.forecastData?.accuracy_evaluation || {};
     },
@@ -499,6 +642,22 @@ export default {
     },
     targetPeriodName() {
       return `${this.forecastData?.meta?.next_month_name || 'Bulan Ini'} ${this.forecastData?.meta?.next_year || ''}`;
+    }
+  },
+  watch: {
+    forecastData() {
+      this.categoryPage = 1;
+      this.historicalPage = 1;
+    },
+    categoryPageCount(newValue) {
+      if (this.categoryPage > newValue && newValue > 0) {
+        this.categoryPage = newValue;
+      }
+    },
+    historicalPageCount(newValue) {
+      if (this.historicalPage > newValue && newValue > 0) {
+        this.historicalPage = newValue;
+      }
     }
   },
   methods: {
@@ -546,11 +705,22 @@ export default {
   flex-wrap: wrap;
 }
 
+.header-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.header-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
 .header-tag-row {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  margin-bottom: 0.65rem;
+  margin-bottom: 0.25rem;
   flex-wrap: wrap;
 }
 
@@ -561,6 +731,19 @@ export default {
   background: rgba(99, 102, 241, 0.15);
   border: 1px solid rgba(99, 102, 241, 0.35);
   color: #a5b4fc;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.25rem 0.65rem;
+  border-radius: 8px;
+}
+
+.simulation-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(6, 182, 212, 0.15);
+  border: 1px solid rgba(6, 182, 212, 0.35);
+  color: #06b6d4;
   font-size: 0.75rem;
   font-weight: 700;
   padding: 0.25rem 0.65rem;
@@ -934,11 +1117,21 @@ export default {
   margin: 0;
 }
 
+/* Forecast sections and cards */
+#forecast-panel > * + * {
+  margin-top: 1.5rem;
+}
+
 /* 4 Forecast Metric Cards */
 .forecast-cards-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: 1.5rem;
+  row-gap: 1.5rem;
+}
+
+.forecast-cards-grid > .f-card {
+  min-width: 0;
 }
 
 .f-card {
@@ -1008,7 +1201,12 @@ export default {
 .accuracy-section {
   display: flex;
   flex-direction: column;
+  gap: 1.5rem;
   margin: 0.25rem 0;
+}
+
+.accuracy-section > .accuracy-card {
+  width: 100%;
 }
 
 .accuracy-card {
@@ -1399,14 +1597,45 @@ export default {
 }
 
 .history-cards-scroll {
-  display: flex;
-  gap: 0.85rem;
-  overflow-x: auto;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  overflow-x: visible;
   padding-bottom: 0.5rem;
 }
 
+.history-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+.history-page-btn {
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.history-page-btn:hover:not(:disabled) {
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.history-page-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .history-month-card {
-  min-width: 175px;
+  min-width: 0;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--border-color);
   border-radius: 10px;
@@ -1484,8 +1713,13 @@ export default {
 /* Category Breakdown & Insights Split */
 .forecast-details-split {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.25rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 1.5rem;
+  row-gap: 1.5rem;
+}
+
+.forecast-details-split > .forecast-sub-card {
+  min-width: 0;
 }
 
 .forecast-sub-card {
@@ -1571,6 +1805,37 @@ export default {
   transition: width 0.3s ease;
 }
 
+.category-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.15rem;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+.category-page-btn {
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.category-page-btn:hover:not(:disabled) {
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.category-page-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .insights-list {
   display: flex;
   flex-direction: column;
@@ -1647,7 +1912,7 @@ export default {
 
 @media (max-width: 1024px) {
   .forecast-cards-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .forecast-details-split {
     grid-template-columns: 1fr;
@@ -1660,6 +1925,97 @@ export default {
 @media (max-width: 640px) {
   .forecast-cards-grid {
     grid-template-columns: 1fr;
+  }
+  .history-cards-scroll {
+    grid-template-columns: 1fr;
+  }
+  .history-pagination {
+    flex-wrap: wrap;
+  }
+}
+
+/* Tab Navigation Styles */
+.forecast-tabs {
+  display: flex;
+  gap: 0.4rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  padding: 0.25rem;
+  border-radius: 10px;
+  margin-top: 0.75rem;
+}
+
+.segmented-button {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 0.2rem;
+  flex-shrink: 0;
+  margin-left: 1rem;
+}
+
+.segment-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.35rem 0.65rem;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.segment-btn:hover:not(.active) {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.segment-btn.active {
+  background: var(--bg-card);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.segment-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+@media (max-width: 900px) {
+  .forecast-header {
+    flex-wrap: wrap;
+  }
+  .header-left {
+    width: 100%;
+    order: 1;
+  }
+  .segmented-button {
+    width: auto;
+    margin-left: auto;
+    order: 2;
+  }
+}
+
+@media (max-width: 600px) {
+  .segmented-button {
+    width: 100%;
+    margin-left: 0;
+    margin-top: 0.75rem;
+    justify-content: center;
+    order: 3;
+  }
+  .segment-btn {
+    flex: 1;
+    font-size: 0.68rem;
+    padding: 0.35rem 0.5rem;
   }
 }
 </style>

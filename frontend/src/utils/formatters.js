@@ -42,3 +42,17 @@ export function formatPercent(value) {
   if (value === null || value === undefined || isNaN(value)) return '0%';
   return `${Number(value).toFixed(1)}%`;
 }
+
+export function formatRupiahInput(event, target, field) {
+  const input = event.target;
+  let raw = input.value.replace(/[^\d]/g, '');
+  if (raw === '') {
+    target[field] = '';
+    input.value = '';
+    return;
+  }
+  const num = parseInt(raw, 10);
+  const formatted = new Intl.NumberFormat('id-ID').format(num);
+  target[field] = formatted;
+  input.value = formatted;
+}
