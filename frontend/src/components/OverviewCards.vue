@@ -103,8 +103,8 @@
       </div>
       <div class="metric-value highlight-savings">{{ formatRupiah(totalSavings) }}</div>
       <div class="card-footer">
-        <span class="badge badge-savings">Sisa + alokasi tabungan</span>
-        <span class="sub-text">Aktif saja</span>
+        <span class="badge badge-savings">Sisa saldo - kebutuhan & rencana non-tabungan</span>
+        <span class="sub-text">Bulan ini</span>
       </div>
     </div>
   </div>

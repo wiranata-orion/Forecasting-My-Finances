@@ -131,7 +131,7 @@
         :summary="overviewSummary"
         :transaction-count="summary.transaction_count"
         :planned-count="overviewPlannedCount"
-        :total-savings="activeSavingsAmount"
+        :total-savings="totalFinalSavings"
       />
 
       <!-- Section 2: Charts Row (Donut Analytics + Daily Bar Analytics) -->
@@ -141,13 +141,12 @@
           :categories="summary.categories"
           :wallet-balances="periodWalletBalances"
           :wallets="wallets"
-          :savings-wallets="savingsWallets"
           :is-all-time="isAllTime"
-          @save-savings-wallets="handleSaveSavingsWallets"
         />
 
         <DailyBarAnalytics
           :daily-data="summary.daily_analytics"
+          :start-balance="summary.current_month.carry_over_balance || summary.current_month.start_balance || 0"
         />
       </section>
 
@@ -163,7 +162,6 @@
         @realize-planned="handleRealizePlanned"
         :monthly-needs="monthlyNeeds"
         :monthly-templates="monthlyTemplates"
-        :savings-wallets="savingsWallets"
         @create-monthly="handleCreateMonthly"
         @edit-monthly="handleEditMonthly"
         @delete-monthly="handleDeleteMonthly"
@@ -186,7 +184,6 @@
         :is-all-time="isAllTime"
         :monthly-needs="monthlyNeeds"
         :monthly-templates="monthlyTemplates"
-        :savings-wallets="savingsWallets"
         :active-savings="totalFinalSavings"
         :summary="summary.current_month"
         @recalculate-forecast="handleRecalculateForecast"
@@ -255,9 +252,7 @@ import {
   fetchCutoffDays,
   updateCutoffDays,
   fetchCyclePeriod,
-  updateCyclePeriod,
-  fetchSavingsWallets,
-  updateSavingsWallets
+  updateCyclePeriod
 } from '../services/api.js';
 
 function getActiveCycle(startDay, endDay, today = new Date()) {
@@ -361,7 +356,6 @@ export default {
       monthlyNeeds: [],
       monthlyTemplates: [],
       wallets: [],
-      savingsWallets: [],
       walletBalances: [],
       allWalletBalances: [],
       periodWalletBalances: [],
@@ -442,13 +436,25 @@ export default {
       return Number(this.summary.current_month.sisa_tabungan || 0)
         - Number(this.overviewPlannedTotal || 0);
     },
+    // Total Tabungan Aktif: berdasarkan SEMUA transaksi pemasukan dengan kategori/status tabungan
+    // dari SELURUH log transaksi (tidak bergantung pada periode atau pilihan rekening tabungan aktif)
     activeSavingsAmount() {
-      const activeWallets = new Set(this.savingsWallets.map(wallet => String(wallet).trim()));
-      if (!activeWallets.size) return 0;
-      // Use period-scoped wallet balances: reflects savings at the selected period's end date
-      return this.periodWalletBalances
-        .filter(w => activeWallets.has(String(w.wallet || '').trim()))
-        .reduce((total, w) => total + Number(w.balance || 0), 0);
+      // Gunakan SEMUA transaksi (this.transactions), bukan filteredTransactions
+      const txs = this.transactions;
+      let total = 0;
+      for (const tx of txs) {
+        if (tx.type === 'income') {
+          const category = String(tx.category || '').toLowerCase().trim();
+          const savingsStatus = String(tx.savings_status || '').toLowerCase().trim();
+          // Cek apakah ini transaksi tabungan: kategori mengandung "tabung" atau savings_status = 'savings'
+          const isSavingsCategory = category.includes('tabung') || category === 'savings';
+          const isSavingsStatus = savingsStatus === 'savings';
+          if (isSavingsCategory || isSavingsStatus) {
+            total += Number(tx.amount || 0);
+          }
+        }
+      }
+      return total;
     },
     totalFinalSavings() {
       const accountBalances = Number(this.summary.current_month?.sisa_tabungan || 0);
@@ -479,11 +485,7 @@ export default {
   },
   methods: {
     isSavingsExpense(item) {
-      if (item.savings_status === 'savings') return true;
-      const wallet = String(item.wallet || '').trim();
-      return Boolean(wallet) && this.savingsWallets.some(
-        savingsWallet => String(savingsWallet).trim() === wallet
-      );
+      return item.savings_status === 'savings';
     },
     showToast(message, type = 'success') {
       if (this.toast.timer) clearTimeout(this.toast.timer);
@@ -576,14 +578,13 @@ export default {
 
     async refreshAllData() {
       try {
-        const [sumRes, txRes, planRes, monthlyRes, templateRes, walletRes, savingsRes, fcRes] = await Promise.all([
+        const [sumRes, txRes, planRes, monthlyRes, templateRes, walletRes, fcRes] = await Promise.all([
           fetchSummary(this.selectedYear, this.selectedMonth, this.isAllTime),
           fetchTransactions(),
           fetchPlanned(),
           fetchMonthlyNeeds(this.selectedYear, this.selectedMonth),
           fetchMonthlyTemplates(),
           fetchWallets(),
-          fetchSavingsWallets(),
           runForecast(this.selectedYear, this.selectedMonth, null, false, this.isAllTime)
         ]);
         this.summary = sumRes;
@@ -592,7 +593,6 @@ export default {
         this.monthlyNeeds = monthlyRes;
         this.monthlyTemplates = templateRes;
         this.wallets = walletRes;
-        this.savingsWallets = savingsRes.wallets || [];
         this.forecastData = fcRes;
         this.walletBalances = sumRes.wallet_balances || [];
         this.allWalletBalances = sumRes.all_wallet_balances || [];
@@ -765,16 +765,6 @@ export default {
         this.monthlyTemplates = await fetchMonthlyTemplates();
       } catch (err) {
         this.showToast(err.message || 'Gagal menduplikat template', 'error');
-      }
-    },
-
-    async handleSaveSavingsWallets(wallets) {
-      try {
-        const result = await updateSavingsWallets(wallets);
-        this.savingsWallets = result.wallets || [];
-        this.showToast('Pengaturan rekening tabungan disimpan');
-      } catch (err) {
-        this.showToast(err.message || 'Gagal menyimpan rekening tabungan', 'error');
       }
     },
 

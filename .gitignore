@@ -2,7 +2,7 @@
 backend/finance.db
 backend/node_modules/
 backend/__pycache__
-
+backend/recovery_2026-11-02_2230
 # frontend
 .vscode
 frontend/node_modules

@@ -185,7 +185,8 @@ const EXPENSE_CATEGORIES = [
 ];
 
 const INCOME_CATEGORIES = [
-  'Gaji & Upah'
+  'Gaji & Upah',
+  'Tabungan'
 ];
 
 export default {

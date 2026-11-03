@@ -516,7 +516,6 @@
         :active-savings="activeSavings"
         :monthly-needs="monthlyNeeds"
         :monthly-templates="monthlyTemplates"
-        :savings-wallets="savingsWallets"
         :selected-year="selectedYear"
         :selected-month="selectedMonth"
       />
@@ -564,10 +563,6 @@ export default {
       default: () => []
     },
     monthlyTemplates: {
-      type: Array,
-      default: () => []
-    },
-    savingsWallets: {
       type: Array,
       default: () => []
     },

@@ -40,29 +40,6 @@
             <span class="center-sub">{{ centerSub }}</span>
           </div>
         </div>
-        <div v-if="activeMode === 'wallet'" class="savings-wallet-settings">
-          <div class="settings-heading">
-            <div>
-              <div class="settings-title">Rekening Tabungan Aktif</div>
-              <p class="settings-hint">{{ selectedSavingsWallets.length }} rekening dipilih sebagai tabungan.</p>
-            </div>
-            <button class="settings-toggle" @click="showSavingsSettings = !showSavingsSettings">
-              {{ showSavingsSettings ? 'Sembunyikan' : 'Atur' }}
-            </button>
-          </div>
-          <div v-if="showSavingsSettings">
-            <div v-if="walletOptions.length" class="savings-wallet-options">
-              <label v-for="wallet in walletOptions" :key="wallet" class="savings-wallet-option">
-                <input v-model="selectedSavingsWallets" type="checkbox" :value="wallet">
-                <span>{{ wallet }}</span>
-              </label>
-            </div>
-            <p v-else class="settings-hint">Belum ada rekening di database.</p>
-            <button class="btn btn-primary btn-sm" :disabled="isSavingWallets" @click="saveSavingsWallets">
-              {{ isSavingWallets ? 'Menyimpan...' : 'Simpan Pengaturan' }}
-            </button>
-          </div>
-        </div>
       </div>
 
       <div class="legend-wrapper">
@@ -265,23 +242,15 @@ export default {
       type: Array,
       default: () => []
     },
-    savingsWallets: {
-      type: Array,
-      default: () => []
-    },
     isAllTime: {
       type: Boolean,
       default: false
     }
   },
-  emits: ['save-savings-wallets'],
   data() {
     return {
       activeMode: 'finance',
       chartInstance: null,
-      selectedSavingsWallets: [],
-      isSavingWallets: false,
-      showSavingsSettings: false,
       centerTitle: 'Sisa Tabungan',
       centerAmount: 0,
       centerSub: 'Siap dialokasikan'
@@ -321,9 +290,6 @@ export default {
       if (!this.walletBalances || this.walletBalances.length === 0) return [];
       return this.walletBalances;
     },
-    walletOptions() {
-      return Array.from(new Set(this.wallets.map(wallet => typeof wallet === 'string' ? wallet : wallet.name).filter(Boolean)));
-    },
     walletTotal() {
       return this.walletItems.reduce((acc, cur) => acc + (cur.balance || 0), 0);
     }
@@ -358,12 +324,6 @@ export default {
           });
         }
       }
-    },
-    savingsWallets: {
-      immediate: true,
-      handler(value) {
-        this.selectedSavingsWallets = [...(value || [])];
-      }
     }
   },
   mounted() {
@@ -387,11 +347,6 @@ export default {
       this.$nextTick(() => {
         this.renderChart();
       });
-    },
-    saveSavingsWallets() {
-      this.isSavingWallets = true;
-      this.$emit('save-savings-wallets', [...this.selectedSavingsWallets]);
-      this.isSavingWallets = false;
     },
     getCategoryColor(idx) {
       return CATEGORY_COLORS[idx % CATEGORY_COLORS.length];

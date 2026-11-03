@@ -372,10 +372,6 @@ export default {
       type: Array,
       default: () => []
     },
-    savingsWallets: {
-      type: Array,
-      default: () => []
-    },
     isCurrentMonth: {
       type: Boolean,
       default: true
@@ -492,11 +488,7 @@ export default {
     formatDate,
     formatRupiahInput,
     isSavingsExpense(item) {
-      if (item.savings_status === 'savings') return true;
-      const wallet = String(item.wallet || '').trim();
-      return Boolean(wallet) && this.savingsWallets.some(
-        savingsWallet => String(savingsWallet).trim() === wallet
-      );
+      return item.savings_status === 'savings';
     },
     getCategories(type) {
       if (type === 'income') return this.incomeCategories;

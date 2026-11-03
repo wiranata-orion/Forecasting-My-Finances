@@ -156,7 +156,6 @@ export default {
     activeSavings: { type: Number, default: 0 },
     monthlyNeeds: { type: Array, default: () => [] },
     monthlyTemplates: { type: Array, default: () => [] },
-    savingsWallets: { type: Array, default: () => [] },
     selectedYear: { type: Number, default: () => new Date().getFullYear() },
     selectedMonth: { type: Number, default: () => new Date().getMonth() + 1 }
   },
@@ -296,9 +295,7 @@ export default {
       return new Intl.DateTimeFormat('id-ID', { month: 'long', year: 'numeric' }).format(date);
     },
     isSavingsExpense(item) {
-      if (item.savings_status === 'savings') return true;
-      const wallet = String(item.wallet || '').trim();
-      return Boolean(wallet) && this.savingsWallets.some(savingsWallet => String(savingsWallet).trim() === wallet);
+      return item.savings_status === 'savings';
     },
     expenseItemsTotal(items, useRemaining) {
       return items.reduce((total, item) => {
