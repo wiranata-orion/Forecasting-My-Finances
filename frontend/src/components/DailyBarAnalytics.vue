@@ -43,19 +43,68 @@
           >
             Semua
           </button>
+          <template v-if="!isAllTime">
+            <!-- Monthly mode: 7 Hari, 14 Hari -->
+            <button
+              class="pill-btn"
+              :class="{ active: timeFilter === '7d' }"
+              @click="setTimeFilter('7d')"
+            >
+              7 Hari
+            </button>
+            <button
+              class="pill-btn"
+              :class="{ active: timeFilter === '14d' }"
+              @click="setTimeFilter('14d')"
+            >
+              14 Hari
+            </button>
+          </template>
+          <template v-else>
+            <!-- All-time mode: 6 Bulan, 1 Tahun -->
+            <button
+              class="pill-btn"
+              :class="{ active: timeFilter === '6m' }"
+              @click="setTimeFilter('6m')"
+            >
+              6 Bulan
+            </button>
+            <button
+              class="pill-btn"
+              :class="{ active: timeFilter === '1y' }"
+              @click="setTimeFilter('1y')"
+            >
+              1 Tahun
+            </button>
+          </template>
+        </div>
+
+        <!-- Date Window Navigation (for 7d/14d modes) -->
+        <div v-if="timeFilter !== 'all' && maxDateWindowOffset > 0" class="window-nav">
           <button
-            class="pill-btn"
-            :class="{ active: timeFilter === '7d' }"
-            @click="setTimeFilter('7d')"
+            class="nav-btn"
+            :class="{ disabled: !canGoPrevWindow }"
+            :disabled="!canGoPrevWindow"
+            @click="prevWindow"
+            aria-label="Jendela sebelumnya (lebih lama)"
+            title="Jendela sebelumnya (lebih lama)"
           >
-            7 Hari
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
           </button>
+          <span class="window-label">{{ currentWindowLabel }}</span>
           <button
-            class="pill-btn"
-            :class="{ active: timeFilter === '14d' }"
-            @click="setTimeFilter('14d')"
+            class="nav-btn"
+            :class="{ disabled: !canGoNextWindow }"
+            :disabled="!canGoNextWindow"
+            @click="nextWindow"
+            aria-label="Jendela berikutnya (lebih baru)"
+            title="Jendela berikutnya (lebih baru)"
           >
-            14 Hari
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
           </button>
         </div>
       </div>
@@ -111,15 +160,20 @@
     </div>
 
     <!-- Chart Canvas -->
-    <div class="chart-canvas-area">
+    <div class="chart-canvas-area"
+         @touchstart.passive="handleTouchStart"
+         @touchend.passive="handleTouchEnd"
+         @touchcancel="touchStartX = null">
       <div v-if="processedDailyData.length === 0" class="empty-bar-state">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <line x1="18" y1="20" x2="18" y2="10" />
           <line x1="12" y1="20" x2="12" y2="4" />
           <line x1="6" y1="20" x2="6" y2="14" />
         </svg>
-        <p>Belum ada data mutasi harian di bulan ini.</p>
-        <span>Tambahkan pemasukan atau pengeluaran untuk melihat grafik.</span>
+        <p v-if="isAllTime">Belum ada data historis.</p>
+        <p v-else>Belum ada data mutasi harian di bulan ini.</p>
+        <span v-if="isAllTime">Data akan muncul setelah ada transaksi di periode manapun.</span>
+        <span v-else>Tambahkan pemasukan atau pengeluaran untuk melihat grafik.</span>
       </div>
       <canvas v-else ref="barCanvas"></canvas>
     </div>
@@ -241,29 +295,119 @@ export default {
       type: Array,
       default: () => []
     },
+    monthlyData: {
+      type: Array,
+      default: () => []
+    },
     startBalance: {
       type: Number,
       default: 0
+    },
+    isAllTime: {
+      type: Boolean,
+      default: false
     }
   },
   data() {
     return {
       chartInstance: null,
-      timeFilter: 'all', // 'all', '7d', '14d'
-      activeMode: 'finance' // 'finance' = Pengeluaran/Pemasukan, 'wallet' = Uang Tersimpan
+      timeFilter: 'all', // 'all', '7d', '14d', '6m', '1y'
+      activeMode: 'finance', // 'finance' = Pengeluaran/Pemasukan, 'wallet' = Uang Tersimpan
+      dateWindowOffset: 0, // 0 = most recent window, 1 = previous window, etc.
+      touchStartX: null // for swipe gestures
     };
   },
   computed: {
+    // Returns the appropriate data source based on mode
+    sourceData() {
+      return this.isAllTime ? this.monthlyData : this.dailyData;
+    },
+    // Returns the date key field name for the current data source
+    dateKey() {
+      return this.isAllTime ? 'month' : 'date';
+    },
+    // Returns the label field name for the current data source
+    labelKey() {
+      return this.isAllTime ? 'month_label' : 'date';
+    },
+    windowSize() {
+      // Returns the window size in data points based on the current time filter
+      // For monthly mode (isAllTime), these are months; for daily mode, these are days
+      switch (this.timeFilter) {
+        case '7d': return 7;
+        case '14d': return 14;
+        case '6m': return 6;  // 6 months
+        case '1y': return 12; // 12 months
+        default: return 0;
+      }
+    },
     processedDailyData() {
-      if (!this.dailyData || this.dailyData.length === 0) return [];
-      const sorted = [...this.dailyData].sort((a, b) => a.date.localeCompare(b.date));
-      if (this.timeFilter === '7d') {
-        return sorted.slice(-7);
+      const data = this.sourceData;
+      if (!data || data.length === 0) return [];
+
+      const key = this.dateKey;
+      const sorted = [...data].sort((a, b) => a[key].localeCompare(b[key]));
+
+      if (this.timeFilter === 'all') {
+        return sorted;
       }
-      if (this.timeFilter === '14d') {
-        return sorted.slice(-14);
+
+      // For all time-based filters, implement windowed pagination
+      const windowSize = this.windowSize;
+      if (!windowSize) return sorted;
+
+      const totalItems = sorted.length;
+      const maxOffset = Math.max(0, totalItems - windowSize);
+
+      // Clamp offset to valid range
+      const clampedOffset = Math.min(Math.max(0, this.dateWindowOffset), maxOffset);
+
+      // Calculate slice indices
+      // Offset 0 = last windowSize items (most recent)
+      // Offset 1 = previous windowSize items, etc.
+      const endIndex = totalItems - clampedOffset;
+      const startIndex = Math.max(0, endIndex - windowSize);
+
+      return sorted.slice(startIndex, endIndex);
+    },
+    maxDateWindowOffset() {
+      const data = this.sourceData;
+      if (!data || data.length === 0) return 0;
+      if (this.timeFilter === 'all') return 0;
+      const windowSize = this.windowSize;
+      if (!windowSize) return 0;
+      const totalItems = data.length;
+      return Math.max(0, totalItems - windowSize);
+    },
+    currentWindowLabel() {
+      if (this.timeFilter === 'all' || !this.processedDailyData.length) return '';
+      const first = this.processedDailyData[0];
+      const last = this.processedDailyData[this.processedDailyData.length - 1];
+      if (!first || !last) return '';
+
+      const labelKey = this.labelKey;
+      if (this.isAllTime) {
+        // For monthly data, use month_label directly
+        if (first[labelKey] === last[labelKey]) {
+          return first[labelKey];
+        }
+        return `${first[labelKey]} - ${last[labelKey]}`;
+      } else {
+        // For daily data, format the dates
+        const firstDate = new Date(first.date + 'T00:00:00');
+        const lastDate = new Date(last.date + 'T00:00:00');
+        const formatter = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short' });
+        if (first.date === last.date) {
+          return formatter.format(firstDate);
+        }
+        return `${formatter.format(firstDate)} - ${formatter.format(lastDate)}`;
       }
-      return sorted;
+    },
+    canGoPrevWindow() {
+      return this.timeFilter !== 'all' && this.dateWindowOffset < this.maxDateWindowOffset;
+    },
+    canGoNextWindow() {
+      return this.timeFilter !== 'all' && this.dateWindowOffset > 0;
     },
     filteredTotals() {
       let income = 0;
@@ -298,6 +442,8 @@ export default {
     dailyData: {
       deep: true,
       handler() {
+        // Reset window when data changes (e.g., period changed)
+        this.dateWindowOffset = 0;
         this.$nextTick(() => {
           this.renderChart();
         });
@@ -309,6 +455,26 @@ export default {
       });
     },
     startBalance() {
+      this.$nextTick(() => {
+        this.renderChart();
+      });
+    },
+    timeFilter() {
+      // Reset window offset when time filter changes
+      this.dateWindowOffset = 0;
+      this.$nextTick(() => {
+        this.renderChart();
+      });
+    },
+    dateWindowOffset() {
+      this.$nextTick(() => {
+        this.renderChart();
+      });
+    },
+    isAllTime(newVal) {
+      // Reset time filter when switching between monthly/all-time modes
+      this.timeFilter = 'all';
+      this.dateWindowOffset = 0;
       this.$nextTick(() => {
         this.renderChart();
       });
@@ -337,9 +503,53 @@ export default {
     },
     setTimeFilter(filter) {
       this.timeFilter = filter;
+      // Reset window offset when changing time filter
+      this.dateWindowOffset = 0;
       this.$nextTick(() => {
         this.renderChart();
       });
+    },
+    prevWindow() {
+      if (this.canGoPrevWindow) {
+        this.dateWindowOffset++;
+        this.$nextTick(() => {
+          this.renderChart();
+        });
+      }
+    },
+    nextWindow() {
+      if (this.canGoNextWindow) {
+        this.dateWindowOffset--;
+        this.$nextTick(() => {
+          this.renderChart();
+        });
+      }
+    },
+    resetWindow() {
+      this.dateWindowOffset = 0;
+      this.$nextTick(() => {
+        this.renderChart();
+      });
+    },
+    handleTouchStart(e) {
+      this.touchStartX = e.touches[0].clientX;
+    },
+    handleTouchEnd(e) {
+      if (this.touchStartX === null) return;
+      const touchEndX = e.changedTouches[0].clientX;
+      const diff = touchEndX - this.touchStartX;
+      const threshold = 50; // minimum swipe distance
+
+      if (Math.abs(diff) > threshold) {
+        if (diff > 0) {
+          // Swipe right - go to next window (more recent)
+          this.nextWindow();
+        } else {
+          // Swipe left - go to previous window (older)
+          this.prevWindow();
+        }
+      }
+      this.touchStartX = null;
     },
     renderChart() {
       this.$nextTick(() => {
@@ -359,7 +569,10 @@ export default {
         if (!ctx) return;
 
         // Extract labels and dataset values
-        const labels = dataItems.map(d => formatDateShort(d.date));
+        // For monthly data (isAllTime), use month_label; for daily data, use formatDateShort
+        const labels = this.isAllTime
+          ? dataItems.map(d => d.month_label)
+          : dataItems.map(d => formatDateShort(d.date));
         const incomeValues = dataItems.map(d => d.income || 0);
         const expenseValues = dataItems.map(d => d.expense || 0);
 
@@ -406,7 +619,11 @@ export default {
                     title: (items) => {
                       if (!items || !items.length) return '';
                       const idx = items[0].dataIndex;
-                      return `Tanggal: ${dataItems[idx]?.date || ''}`;
+                      const item = dataItems[idx];
+                      if (!item) return '';
+                      // For monthly data, show month label; for daily data, show date
+                      const label = this.isAllTime ? (item.month_label || item.month) : (item.date || '');
+                      return `Periode: ${label}`;
                     },
                     label: (context) => {
                       const label = context.dataset.label || '';
@@ -419,7 +636,8 @@ export default {
                       const inc = incomeValues[idx] || 0;
                       const exp = expenseValues[idx] || 0;
                       const net = inc - exp;
-                      return `\n Net Harian: ${net >= 0 ? '+' : ''}${formatRupiah(net)}`;
+                      const prefix = this.isAllTime ? 'Net Bulanan' : 'Net Harian';
+                      return `\n ${prefix}: ${net >= 0 ? '+' : ''}${formatRupiah(net)}`;
                     }
                   }
                 }
@@ -529,7 +747,11 @@ export default {
                     title: (items) => {
                       if (!items || !items.length) return '';
                       const idx = items[0].dataIndex;
-                      return `Tanggal: ${dataItems[idx]?.date || ''}`;
+                      const item = dataItems[idx];
+                      if (!item) return '';
+                      // For monthly data, show month label; for daily data, show date
+                      const label = this.isAllTime ? (item.month_label || item.month) : (item.date || '');
+                      return `Periode: ${label}`;
                     },
                     label: (context) => {
                       const val = context.raw || 0;
@@ -542,8 +764,9 @@ export default {
                       const exp = expenseValues[idx] || 0;
                       const net = inc - exp;
                       const netLabel = net >= 0 ? '▲  Naik' : '▼  Turun';
+                      const periodPrefix = this.isAllTime ? 'Bulanan' : 'Harian';
 
-                      // Calculate change from previous day
+                      // Calculate change from previous period
                       let changeStr = '';
                       if (idx > 0 && runningBalances.length > 1) {
                         const prevBalance = runningBalances[idx - 1];
@@ -551,10 +774,10 @@ export default {
                         const change = currBalance - prevBalance;
                         const pct = prevBalance !== 0 ? ((change / Math.abs(prevBalance)) * 100).toFixed(1) : '0';
                         const arrow = change >= 0 ? '▲' : '▼';
-                        changeStr = `\n Perubahan harian: ${arrow} ${formatRupiah(Math.abs(change))} (${pct}%)`;
+                        changeStr = `\n Perubahan ${periodPrefix.toLowerCase()}: ${arrow} ${formatRupiah(Math.abs(change))} (${pct}%)`;
                       }
 
-                      return ` ${netLabel} harian: ${net >= 0 ? '+' : ''}${formatRupiah(net)}`
+                      return ` ${netLabel} ${periodPrefix.toLowerCase()}: ${net >= 0 ? '+' : ''}${formatRupiah(net)}`
                         + `\n Pemasukan: ${formatRupiah(inc)}`
                         + `\n Pengeluaran: ${formatRupiah(exp)}`
                         + changeStr;
@@ -829,5 +1052,50 @@ export default {
 
 .empty-bar-state span {
   font-size: 0.775rem;
+}
+
+/* Window Navigation Styles */
+.window-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-color);
+  padding: 0.2rem 0.5rem;
+  border-radius: 8px;
+}
+
+.nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.nav-btn:hover:not(.disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.nav-btn.disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.window-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  min-width: 120px;
+  text-align: center;
 }
 </style>

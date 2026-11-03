@@ -146,7 +146,9 @@
 
         <DailyBarAnalytics
           :daily-data="summary.daily_analytics"
+          :monthly-data="summary.monthly_analytics"
           :start-balance="summary.current_month.carry_over_balance || summary.current_month.start_balance || 0"
+          :is-all-time="isAllTime"
         />
       </section>
 
@@ -346,6 +348,7 @@ export default {
           savings_ratio: 0
         },
         daily_analytics: [],
+        monthly_analytics: [],
         categories: [],
         transaction_count: 0,
         planned_count: 0

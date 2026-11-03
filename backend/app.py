@@ -660,6 +660,7 @@ def get_summary():
 
     cur_txs = []
     daily_map = {}
+    monthly_map = {}
     for tx in txs:
         try:
             transaction_date = datetime.strptime(str(tx['date'])[:10], '%Y-%m-%d').date()
@@ -677,6 +678,17 @@ def get_summary():
         elif tx.get('type') == 'expense':
             daily['expense'] += amount
         daily['count'] += 1
+
+        # Build monthly aggregation for all-time mode
+        if is_all_time:
+            month_key = transaction_date.strftime('%Y-%m')
+            month_label = f"{MONTH_NAMES_ID[transaction_date.month][:3]} {transaction_date.year}"
+            monthly = monthly_map.setdefault(month_key, {'month': month_key, 'month_label': month_label, 'income': 0.0, 'expense': 0.0, 'count': 0})
+            if tx.get('type') == 'income':
+                monthly['income'] += amount
+            elif tx.get('type') == 'expense':
+                monthly['expense'] += amount
+            monthly['count'] += 1
 
     total_income = sum(float(tx['amount']) for tx in cur_txs if tx.get('type') == 'income')
     total_expense = sum(float(tx['amount']) for tx in cur_txs if tx.get('type') == 'expense')
@@ -731,6 +743,7 @@ def get_summary():
             'savings_status_amount': calculate_active_savings_amount(cur_txs)
         },
         'daily_analytics': sorted(daily_map.values(), key=lambda item: item['date']),
+        'monthly_analytics': sorted(monthly_map.values(), key=lambda item: item['month']) if is_all_time else [],
         'categories': sorted(
             [{'category': category, 'amount': amount} for category, amount in category_map.items()],
             key=lambda item: item['amount'], reverse=True
