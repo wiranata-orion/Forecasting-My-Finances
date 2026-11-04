@@ -134,9 +134,9 @@
         :total-savings="totalFinalSavings"
       />
 
-      <!-- Section 2: Charts Row (Donut Analytics + Daily Bar Analytics) -->
+      <!-- Section 2: Charts Row (Donut Chart + Daily Bar Chart) -->
       <section class="charts-grid" id="grafik">
-        <DonutAnalytics
+        <DonutChart
           :summary="summary.current_month"
           :categories="summary.categories"
           :wallet-balances="periodWalletBalances"
@@ -144,7 +144,7 @@
           :is-all-time="isAllTime"
         />
 
-        <DailyBarAnalytics
+        <DailyBarChart
           :daily-data="summary.daily_analytics"
           :monthly-data="summary.monthly_analytics"
           :start-balance="summary.current_month.carry_over_balance || summary.current_month.start_balance || 0"
@@ -220,8 +220,8 @@
 
 <script>
 import OverviewCards from './OverviewCards.vue';
-import DonutAnalytics from './DonutAnalytics.vue';
-import DailyBarAnalytics from './DailyBarAnalytics.vue';
+import DonutChart from './DonutChart.vue';
+import DailyBarChart from './DailyBarChart.vue';
 import PlannedExpenses from './PlannedExpenses.vue';
 import ForecastingView from './ForecastingView.vue';
 import ActivityLog from './ActivityLog.vue';
@@ -312,8 +312,8 @@ export default {
   name: 'Home',
   components: {
     OverviewCards,
-    DonutAnalytics,
-    DailyBarAnalytics,
+    DonutChart,
+    DailyBarChart,
     PlannedExpenses,
     ForecastingView,
     ActivityLog,
@@ -1100,6 +1100,11 @@ export default {
   grid-template-columns: 1fr 1.2fr;
   gap: 1.25rem;
   margin-bottom: 1.5rem;
+  min-width: 0;
+}
+
+.charts-grid > * {
+  min-width: 0;
 }
 
 /* Toast */
